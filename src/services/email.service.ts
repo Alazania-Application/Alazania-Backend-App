@@ -1,0 +1,111 @@
+import dns from "dns";
+import * as path from "path";
+import fs from "fs";
+import { NextFunction, Request, Response } from "express";
+import Mailjet from "node-mailjet";
+import { ErrorResponse } from "@/utils";
+import { HttpStatusCode } from "axios";
+
+class EmailService {
+  private mailjet: Mailjet;
+
+  constructor() {
+    this.mailjet = new Mailjet({
+      apiKey: process.env.MJ_APIKEY_PUBLIC || "your-api-key",
+      apiSecret: process.env.MJ_APIKEY_PRIVATE || "your-api-secret",
+    });
+  }
+  private getHtmlTemplateWithData(
+    templates: string /*templateFilePath: string*/,
+    data: any
+  ) {
+    const baseTemplateFilePath = path.join(
+      __dirname,
+      "/../emailTemplate/base-template.html"
+    );
+    const baseTemplate = fs.readFileSync(baseTemplateFilePath, {
+      encoding: "utf8",
+    });
+    // let bodyTemplate = templateFilePath.map(v =>
+    //   fs.readFileSync(v, { encoding: "utf8" }),
+    // );
+
+    let templateWithBody = baseTemplate.replace("{body}", templates);
+
+    Object.keys(data).forEach((key) => {
+      const keyString = "{" + key + "}";
+      templateWithBody = templateWithBody.replace(
+        new RegExp(keyString, "g"),
+        data[key]
+      );
+    });
+
+    return templateWithBody;
+  }
+
+  send = async (messages: any) =>
+    await this.mailjet.post("send", { version: "v3.1" }).request({
+      Messages: messages,
+    });
+
+    
+  isValidEmailFormat = (email: string) => {
+    const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return regex.test(email);
+  };
+
+  isOrgEmail = (email: string) => {
+    const freeDomains = [
+      "gmail.com",
+      "yahoo.com",
+      "hotmail.com",
+      "outlook.com",
+      "icloud.com",
+      "aol.com",
+      "zoho.com",
+      "protonmail.com",
+      "yandex.com",
+      "yopmail.com",
+    ];
+    if (!this.isValidEmailFormat(email)) {
+      throw new Error("Invalid email format");
+    }
+    const domain = email.split("@")[1].toLowerCase();
+    return !freeDomains.includes(domain);
+  };
+
+  hasMXRecords = async (email: string): Promise<boolean> => {
+    if (!this.isValidEmailFormat(email)) {
+      throw new ErrorResponse(
+        "Invalid email format",
+        HttpStatusCode.BadRequest
+      );
+    }
+    const domain = email.split("@")[1];
+
+    return new Promise((resolve) => {
+      dns.resolveMx(domain, (err, addresses) => {
+        if (err || !addresses || addresses.length === 0) {
+          resolve(false);
+        } else {
+          resolve(true);
+        }
+      });
+    });
+  };
+
+  isValidEmail = async (req: Request, res: Response, next: NextFunction) => {
+    const email = req.body.email;
+    const hasMXRecords = await this.hasMXRecords(email);
+
+    if (!hasMXRecords) {
+      throw new ErrorResponse(
+        "Invalid email format",
+        HttpStatusCode.BadRequest
+      );
+    }
+    next();
+  };
+}
+
+export const emailService = new EmailService();
