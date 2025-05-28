@@ -52,6 +52,22 @@ class AuthController {
       return authService.sendTokenResponse(user, HttpStatusCode.Ok, res);
     },
   ];
+
+  forgotUserPassword = [
+    ValidatorMiddleware.inputs([
+      body("username", "Email/Username/Phone is required").exists().isString(),
+    ]),
+
+    async (req: Request, res: Response, next: NextFunction) => {
+      await authService.sendUserResetPasswordToken(req.body.username);
+
+      res.status(HttpStatusCode.Ok).json({
+        success: true,
+        message:
+          "Instructions on how to reset your account password has been sent to your mail it exist",
+      });
+    },
+  ];
 }
 
 export const authController = new AuthController();

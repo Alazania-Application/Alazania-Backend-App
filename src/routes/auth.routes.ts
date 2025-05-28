@@ -3,5 +3,7 @@ import { Router } from "express";
 
 export const authRouter = Router();
 
-authRouter.post("/register-user", authController.registerUser);
-authRouter.post("/login-user", authController.loginUser);
+// USER AUTH ROUTES
+authRouter.post("/user/register", authController.registerUser);
+authRouter.post("/user/login", authController.loginUser);
+authRouter.post("/user/forgot-password", authController.forgotUserPassword);

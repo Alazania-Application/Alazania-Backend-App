@@ -10,6 +10,11 @@ export const db_password = (process.env.DB_PASSWORD as string) || "";
 export const USER_TOKEN = (process.env.USER_TOKEN as string) || "";
 export const JWT_KEY = process.env.JWT_KEY as StringValue;
 export const JWT_EXPIRY = process.env.JWT_EXPIRY as StringValue;
-export const JWT_COOKIE_EXPIRY = process.env.JWT_COOKIE_EXPIRY as StringValue;;
-export const VERIFICATION_TOKEN_EXPIRY =
-         process.env.VERIFICATION_TOKEN_EXPIRY as StringValue;
+export const JWT_COOKIE_EXPIRY = process.env.JWT_COOKIE_EXPIRY as StringValue;
+export const VERIFICATION_TOKEN_EXPIRY = process.env
+  .VERIFICATION_TOKEN_EXPIRY as StringValue;
+
+export const MAIL_USERNAME = process.env.MAIL_USERNAME as string;
+export const MAIL_PASSWORD = process.env.MAIL_PASSWORD as string;
+
+export const FRONTEND_URL = process.env.FRONTEND_URL as string;

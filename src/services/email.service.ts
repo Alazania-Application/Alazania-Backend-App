@@ -2,19 +2,39 @@ import dns from "dns";
 import * as path from "path";
 import fs from "fs";
 import { NextFunction, Request, Response } from "express";
-import Mailjet from "node-mailjet";
+import Mailjet, { SendEmailV3_1 } from "node-mailjet";
 import { ErrorResponse } from "@/utils";
 import { HttpStatusCode } from "axios";
+import { IUser } from "@/types/user";
+import { MAIL_PASSWORD, MAIL_USERNAME } from "@/config";
+import { type Transporter, createTransport } from "nodemailer";
+import type Mail from "nodemailer/lib/mailer";
+import type SMTPTransport from "nodemailer/lib/smtp-transport";
 
 class EmailService {
   private mailjet: Mailjet;
+  private transporter: Transporter<
+    SMTPTransport.SentMessageInfo,
+    SMTPTransport.Options
+  >;
 
   constructor() {
     this.mailjet = new Mailjet({
       apiKey: process.env.MJ_APIKEY_PUBLIC || "your-api-key",
       apiSecret: process.env.MJ_APIKEY_PRIVATE || "your-api-secret",
     });
+    this.transporter = createTransport({
+      service: "Gmail",
+      host: "smtp.gmail.com",
+      port: 465,
+      secure: true, // use SSL
+      auth: {
+        user: MAIL_USERNAME,
+        pass: MAIL_PASSWORD,
+      },
+    });
   }
+
   private getHtmlTemplateWithData(
     templates: string /*templateFilePath: string*/,
     data: any
@@ -43,12 +63,19 @@ class EmailService {
     return templateWithBody;
   }
 
-  send = async (messages: any) =>
+  send = async (Messages: SendEmailV3_1.Body) =>
     await this.mailjet.post("send", { version: "v3.1" }).request({
-      Messages: messages,
+      Messages,
     });
 
-    
+  sendMail = async (mailOptions: Mail.Options) => {
+    console.log({mailOptions})
+   return await this.transporter.sendMail(mailOptions).then(res => {
+    console.log({res})
+    return res
+   });
+  };
+
   isValidEmailFormat = (email: string) => {
     const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return regex.test(email);

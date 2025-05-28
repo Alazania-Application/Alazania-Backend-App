@@ -17,3 +17,7 @@ export const generateJwtToken = (
   export const verifyJwtToken = (token: string, key: string): any => {
     return jsonWebToken.verify(token, key) as any;
   };
+
+  export const getFormattedUrl = (url: string) =>
+    url.startsWith("http") ? url : `https://${url}`;
+  

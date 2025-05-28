@@ -1,18 +1,21 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import Neo4jService from "./neo4j.service";
 import { v4 as uuidv4 } from "uuid";
 import { CookieOptions, NextFunction, Request, Response } from "express";
 import { IUser } from "@/types/user";
-import { ErrorResponse, verifyJwtToken } from "@/utils";
+import { ErrorResponse, getFormattedUrl, verifyJwtToken } from "@/utils";
 import { HttpStatusCode } from "axios";
 import {
   env,
+  FRONTEND_URL,
   JWT_COOKIE_EXPIRY,
   JWT_EXPIRY,
   JWT_KEY,
   USER_TOKEN,
 } from "@/config";
+import { emailRepository } from "@/repository/email.repository";
 
 type AuthPayload = { id?: string; email?: string };
 
@@ -44,59 +47,48 @@ class AuthService extends Neo4jService {
       password: string;
     } // : Promise<User | undefined>
   ) {
-    const session = this.getSession();
-    try {
-      const result = await session.run(
-        `
+    const result = await this.readFromDB(
+      `
         MATCH (u:User)
         WHERE u.username = $username OR u.email = $username OR u.phone = $username
         RETURN u
         `,
-        { username }
-      );
+      { username }
+    );
 
-      if (!result.records.length) {
-        throw new ErrorResponse(
-          "Invalid credentials",
-          HttpStatusCode.BadRequest
-        );
-      }
-
-      const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
-
-      if (!doc?.password) {
-        if (!doc?.googleIdToken) {
-          throw new ErrorResponse(
-            "Invalid credentials",
-            HttpStatusCode.BadRequest
-          );
-        }
-        throw new ErrorResponse(
-          "No password set for this user, please login with Google",
-          HttpStatusCode.BadRequest
-        );
-      }
-
-      const isMatchPassword: boolean = await bcrypt.compare(
-        password,
-        doc.password
-      );
-
-      if (!isMatchPassword) {
-        throw new ErrorResponse(
-          "Invalid credentials",
-          HttpStatusCode.BadRequest
-        );
-      }
-
-      const { password: hashedPassword, ...user } = doc;
-      if (user.createdAt && typeof user.createdAt.toString === "function") {
-        user.createdAt = user.createdAt.toString();
-      }
-      return user;
-    } finally {
-      await session.close();
+    if (!result.records.length) {
+      throw new ErrorResponse("Invalid credentials", HttpStatusCode.BadRequest);
     }
+
+    const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
+
+    if (!doc?.password) {
+      if (!doc?.googleIdToken) {
+        throw new ErrorResponse(
+          "Invalid credentials",
+          HttpStatusCode.BadRequest
+        );
+      }
+      throw new ErrorResponse(
+        "No password set for this user, please login with Google",
+        HttpStatusCode.BadRequest
+      );
+    }
+
+    const isMatchPassword: boolean = await bcrypt.compare(
+      password,
+      doc.password
+    );
+
+    if (!isMatchPassword) {
+      throw new ErrorResponse("Invalid credentials", HttpStatusCode.BadRequest);
+    }
+
+    const { password: hashedPassword, ...user } = doc;
+    if (user.createdAt && typeof user.createdAt.toString === "function") {
+      user.createdAt = user.createdAt.toString();
+    }
+    return user;
   }
 
   /**
@@ -263,6 +255,51 @@ class AuthService extends Neo4jService {
     // }
 
     return user;
+  };
+
+  sendUserResetPasswordToken = async (username: string) => {
+    const result = await this.readFromDB(
+      `
+       MATCH (u:User)
+       WHERE u.username = $username OR u.email = $username OR u.phone = $username
+       RETURN u
+      `,
+      { username }
+    );
+
+    if (!result.records.length) {
+      return null;
+    }
+
+    const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
+
+    const resetToken = crypto.randomBytes(20).toString("hex");
+
+    await this.writeToDB(
+      `
+      MERGE (u:User {id: $id})
+      SET u.resetPasswordToken = $resetPasswordToken , u.resetPasswordTokenExpiryTime = $resetPasswordTokenExpiryTime
+      `,
+      {
+        resetPasswordToken: crypto
+          .createHash("sha256")
+          .update(resetToken)
+          .digest("hex"),
+        resetPasswordTokenExpiryTime: Date.now() + 10 * 60 * 1000,
+        id: doc?.id,
+      }
+    );
+
+    const resetUrl = `${getFormattedUrl(
+      FRONTEND_URL
+    )}/reset-password/${resetToken}`;
+
+    return await emailRepository.sendResetPasswordMail({
+      user: {
+        email: doc?.email,
+      },
+      resetUrl,
+    });
   };
 }
 

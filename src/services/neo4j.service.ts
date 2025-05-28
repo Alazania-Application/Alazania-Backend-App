@@ -1,4 +1,8 @@
-import neo4j, { type Driver, type Session } from "neo4j-driver";
+import neo4j, {
+  ManagedTransaction,
+  type Driver,
+  type Session,
+} from "neo4j-driver";
 import { db_password, db_uri, db_username } from "@/config";
 
 export default class Neo4jService {
@@ -30,6 +34,30 @@ export default class Neo4jService {
 
   public async close(): Promise<void> {
     await this.driver.close();
+  }
+
+  public async readFromDB(
+    cypher: string,
+    params: Record<string, string | number> = {}
+  ) {
+    const session = this.getSession();
+    return await session
+      .executeRead((tx: ManagedTransaction) => tx.run(cypher, params))
+      .finally(async () => {
+        await session.close();
+      });
+  }
+
+  public async writeToDB(
+    cypher: string,
+    params: Record<string, string | number> = {}
+  ) {
+    const session = this.getSession();
+    return await session
+      .executeWrite((tx: ManagedTransaction) => tx.run(cypher, params))
+      .finally(async () => {
+        await session.close();
+      });
   }
 
   public async initializeDatabase(): Promise<void> {
