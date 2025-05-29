@@ -4,18 +4,18 @@ import { IUser } from "@/dtos";
 class EmailRepository {
   sendResetPasswordMail = async ({
     user,
-    resetUrl,
+    OTP,
   }: {
     user: Partial<IUser>;
-    resetUrl: string;
+    OTP: string;
   }) => {
     const message = `You are receiving this email because you (or someone else) has requested a password reset.`;
 
     let mailOptions = {
       from: `Alazania <ifechi.dev@gmail.com>`,
       to: `${user.email}`,
-      subject: "Reset Password",
-      text: `Hey ${user.firstName},\n\n${message}\n\n Open this link in your browser: ${resetUrl}\n\nBest regards,\n\nThe Nkata Team.
+      subject: "Reset Password OTP",
+      text: `Hey ${user?.firstName||""},\n\n${message}\n\n Use this OTP to recover your account: ${OTP}\n\nOTP expires in 5 minutes\n\nBest regards,\n\nThe Alazania Team.
       `,
       //   html: generateResetMessage(user?.firstName || "", message, resetUrl),
     };

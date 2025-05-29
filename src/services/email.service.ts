@@ -1,4 +1,5 @@
 import dns from "dns";
+import colors from "colors";
 import * as path from "path";
 import fs from "fs";
 import { NextFunction, Request, Response } from "express";
@@ -69,11 +70,12 @@ class EmailService {
     });
 
   sendMail = async (mailOptions: Mail.Options) => {
-    console.log({mailOptions})
-   return await this.transporter.sendMail(mailOptions).then(res => {
-    console.log({res})
-    return res
-   });
+    console.log(colors.yellow(`Sending mail to ${mailOptions?.to}`));
+
+    return await this.transporter.sendMail(mailOptions).then((res) => {
+      console.log(colors.green(`Mail sent successfully`));
+      return res;
+    });
   };
 
   isValidEmailFormat = (email: string) => {

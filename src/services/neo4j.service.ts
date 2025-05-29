@@ -28,7 +28,7 @@ export default class Neo4jService {
     return Neo4jService.instance;
   }
 
-  public getSession(): Session {
+  protected getSession(): Session {
     return this.driver.session();
   }
 
@@ -36,7 +36,7 @@ export default class Neo4jService {
     await this.driver.close();
   }
 
-  public async readFromDB(
+  protected async readFromDB(
     cypher: string,
     params: Record<string, string | number> = {}
   ) {
@@ -48,9 +48,9 @@ export default class Neo4jService {
       });
   }
 
-  public async writeToDB(
+  protected async writeToDB(
     cypher: string,
-    params: Record<string, string | number> = {}
+    params: Record<string, any>={}
   ) {
     const session = this.getSession();
     return await session
@@ -69,6 +69,9 @@ export default class Neo4jService {
       );
       await session.run(
         "CREATE CONSTRAINT user_username IF NOT EXISTS FOR (u:User) REQUIRE u.username IS UNIQUE"
+      );
+      await session.run(
+        "CREATE CONSTRAINT user_id IF NOT EXISTS FOR (u:User) REQUIRE u.id IS UNIQUE"
       );
       await session.run(
         "CREATE CONSTRAINT post_id IF NOT EXISTS FOR (p:Post) REQUIRE p.id IS UNIQUE"

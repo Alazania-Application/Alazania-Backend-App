@@ -1,6 +1,7 @@
 import { UserResponseDto } from "@/dtos";
 import { uploadFile } from "@/middlewares/multer.middleware";
 import ValidatorMiddleware from "@/middlewares/validator.middleware";
+import { userService } from "@/services";
 import { HttpStatusCode } from "axios";
 import { Request, Response, NextFunction } from "express";
 
@@ -40,12 +41,11 @@ class UserController {
   update = [
     // this.handleAvatarUpload,
     async (req: Request, res: Response, next: NextFunction) => {
-      const updates = req.body;
-
-      console.log({ updates });
+      const user = await userService.updateUser(req?.user?.id, req.body);
 
       res.status(HttpStatusCode.Created).json({
         success: true,
+        data: user,
         message: "User updated successfully",
       });
     },
