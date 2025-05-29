@@ -5,7 +5,7 @@ import { NextFunction, Request, Response } from "express";
 import Mailjet, { SendEmailV3_1 } from "node-mailjet";
 import { ErrorResponse } from "@/utils";
 import { HttpStatusCode } from "axios";
-import { IUser } from "@/types/user";
+// import { IUser } from "@/dtos/user";
 import { MAIL_PASSWORD, MAIL_USERNAME } from "@/config";
 import { type Transporter, createTransport } from "nodemailer";
 import type Mail from "nodemailer/lib/mailer";

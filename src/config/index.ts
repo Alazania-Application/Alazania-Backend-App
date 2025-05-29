@@ -18,3 +18,17 @@ export const MAIL_USERNAME = process.env.MAIL_USERNAME as string;
 export const MAIL_PASSWORD = process.env.MAIL_PASSWORD as string;
 
 export const FRONTEND_URL = process.env.FRONTEND_URL as string;
+
+
+// SPACES
+export const SPACES_ENDPOINT = process.env.SPACES_ENDPOINT || "";
+export const SPACES_ACCESS_KEY_ID = process.env.SPACES_ACCESS_KEY_ID || "";
+export const SPACES_ACCESS_KEY = process.env.SPACES_ACCESS_KEY || "";
+export const SPACES_BUCKET = process.env.SPACES_BUCKET || "";
+export const SPACES_REGION = process.env.SPACES_REGION || "";
+
+// CONSTANTS
+export const MAX_FILE_SIZE_MB = 5; //5MB
+export const MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024; //5MB
+export const MAX_FILE_COUNT = 5;
+export const MAX_FILE_SIZE_ERROR = `File size should not exceed ${MAX_FILE_SIZE / 1024 / 1024}MB`;

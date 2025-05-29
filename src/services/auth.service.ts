@@ -4,7 +4,7 @@ import crypto from "crypto";
 import Neo4jService from "./neo4j.service";
 import { v4 as uuidv4 } from "uuid";
 import { CookieOptions, NextFunction, Request, Response } from "express";
-import { IUser } from "@/types/user";
+import { IUser } from "@/dtos";
 import { ErrorResponse, getFormattedUrl, verifyJwtToken } from "@/utils";
 import { HttpStatusCode } from "axios";
 import {
@@ -16,6 +16,7 @@ import {
   USER_TOKEN,
 } from "@/config";
 import { emailRepository } from "@/repository/email.repository";
+import { UserResponseDto } from "@/dtos/user.dto";
 
 type AuthPayload = { id?: string; email?: string };
 
@@ -46,7 +47,7 @@ class AuthService extends Neo4jService {
       username: string;
       password: string;
     } // : Promise<User | undefined>
-  ) {
+  ): Promise<UserResponseDto> {
     const result = await this.readFromDB(
       `
         MATCH (u:User)
@@ -84,7 +85,12 @@ class AuthService extends Neo4jService {
       throw new ErrorResponse("Invalid credentials", HttpStatusCode.BadRequest);
     }
 
-    const { password: hashedPassword, ...user } = doc;
+    const {
+      password: hashedPassword,
+      resetPasswordTokenExpiryTime,
+      resetPasswordToken,
+      ...user
+    } = doc;
     if (user.createdAt && typeof user.createdAt.toString === "function") {
       user.createdAt = user.createdAt.toString();
     }
@@ -225,7 +231,7 @@ class AuthService extends Neo4jService {
   loginUser = async (payload: {
     username: string;
     password: string;
-  }): Promise<IUser> => {
+  }): Promise<UserResponseDto> => {
     const user = await this.findUserByCredentials(payload);
 
     // if (!user.isActive) {

@@ -1,10 +1,7 @@
 import { emailService } from "@/services";
-import { IUser } from "@/types/user";
-import type Mail from "nodemailer/lib/mailer";
+import { IUser } from "@/dtos";
 
 class EmailRepository {
-
-
   sendResetPasswordMail = async ({
     user,
     resetUrl,
