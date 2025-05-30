@@ -1,7 +1,7 @@
-import { userController } from "@/controllers/user.controllers";
+import { Router } from "express";
+import { userController } from "@/controllers";
 import { authMiddleWare } from "@/middlewares/authenticator.middleware";
 import { multerConfig } from "@/middlewares/multer.middleware";
-import { Router } from "express";
 
 export const userRouter = Router();
 

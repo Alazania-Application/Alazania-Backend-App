@@ -1,8 +1,8 @@
 import { omitDTO, toDTO } from "@/utils";
-import Neo4jService from "./neo4j.service";
-import { IUser, UserResponseDto } from "@/dtos";
+import BaseService from "./base.service";
+import { IUser, UserResponseDto } from "@/models";
 
-class UserService extends Neo4jService {
+class UserService extends BaseService {
   private withDTO = (doc: IUser) => {
     return omitDTO(doc, ["password", "isDeleted"]);
   };

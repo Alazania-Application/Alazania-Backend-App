@@ -1,5 +1,5 @@
 import { emailService } from "@/services";
-import { IUser } from "@/dtos";
+import { IUser } from "@/models";
 
 class EmailRepository {
   sendResetPasswordMail = async ({

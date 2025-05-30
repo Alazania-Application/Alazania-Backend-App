@@ -1,10 +1,10 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import bycrpt from "bcryptjs";
-import Neo4jService from "./neo4j.service";
+import BaseService from "./base.service";
 import { v4 as uuidv4 } from "uuid";
 import { CookieOptions, NextFunction, Request, Response } from "express";
-import { IUser } from "@/dtos";
+import { IUser } from "@/models";
 import { ErrorResponse, omitDTO, verifyJwtToken } from "@/utils";
 import { HttpStatusCode } from "axios";
 import {
@@ -15,7 +15,7 @@ import {
   USER_TOKEN,
 } from "@/config";
 import { emailRepository } from "@/repository/email.repository";
-import { UserResponseDto } from "@/dtos/user.dto";
+import { User, UserResponseDto } from "@/models/user.model";
 import { otpService } from "./otp.service";
 import { userService } from "./user.service";
 
@@ -31,9 +31,9 @@ type AuthPayload = { id?: string; email?: string };
  *
  * @class AuthService
  * @typedef {AuthService}
- * @extends {Neo4jService}
+ * @extends {BaseService}
  */
-class AuthService extends Neo4jService {
+class AuthService extends BaseService {
   /**
    * Checks and validates the password
    */
@@ -87,7 +87,11 @@ class AuthService extends Neo4jService {
       throw new ErrorResponse("Invalid credentials", HttpStatusCode.BadRequest);
     }
 
-    const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
+    const doc = result.records[0]?.get("u")?.properties as IUser;
+
+    if (!doc) {
+      throw new ErrorResponse("Invalid credentials", HttpStatusCode.BadRequest);
+    }
 
     if (!doc?.password) {
       if (!doc?.googleIdToken) {
@@ -328,7 +332,7 @@ class AuthService extends Neo4jService {
   };
 
   sendUserResetPasswordToken = async (username: string) => {
-    const result = await this.readFromDB(
+    const result = await this.readFromDB<IUser>(
       `
        MATCH (u:User)
        WHERE u.username = $username OR u.email = $username OR u.phone = $username
@@ -341,7 +345,7 @@ class AuthService extends Neo4jService {
       return null;
     }
 
-    const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
+   const doc = result.records[0]?.toObject()
 
     const OTP = await otpService.generateOTP(doc?.email);
 

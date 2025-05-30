@@ -1,10 +1,10 @@
 import otpGenerator from "otp-generator";
 import bycrpt from "bcryptjs";
-import Neo4jService from "./neo4j.service";
+import BaseService from "./base.service";
 import { ErrorResponse } from "@/utils";
 import { HttpStatusCode } from "axios";
 
-class OtpService extends Neo4jService {
+class OtpService extends BaseService {
   async generateOTP(email: string) {
     const OTP = otpGenerator.generate(6, {
       digits: true,

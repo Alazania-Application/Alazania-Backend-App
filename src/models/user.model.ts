@@ -1,6 +1,7 @@
-import { Node, Relationship, Integer } from "neo4j-driver";
+import { Node, Integer } from "neo4j-driver";
+import { BaseModel } from "./base.model";
 
-export interface IUser {
+export interface IUser extends BaseModel {
   id: string;
   email: string;
   password?: string;
@@ -12,14 +13,11 @@ export interface IUser {
   avatar?: string;
   username?: string;
 
-  isDeleted?: boolean;
   isVerified?: boolean;
   isEmailVerified?: boolean;
   isPhoneVerified?: boolean;
 
   lastLogin?: Date | string;
-  createdAt?: Date | string;
-  updateAt?: Date | string;
 }
 
 export type User = Node<Integer, IUser>;

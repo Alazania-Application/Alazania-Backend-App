@@ -1,4 +1,4 @@
-import { UserResponseDto } from "@/dtos";
+import { UserResponseDto } from "@/models";
 import { uploadFile } from "@/middlewares/multer.middleware";
 import ValidatorMiddleware from "@/middlewares/validator.middleware";
 import { userService } from "@/services";
@@ -9,7 +9,7 @@ class UserController {
   getProfile = async (req: Request, res: Response, next: NextFunction) => {
     const user: UserResponseDto = req.user;
 
-    res.status(HttpStatusCode.Created).json({
+    res.status(HttpStatusCode.Ok).json({
       success: true,
       data: user,
       message: "User profile fetched successfully",
@@ -43,7 +43,7 @@ class UserController {
     async (req: Request, res: Response, next: NextFunction) => {
       const user = await userService.updateUser(req?.user?.id, req.body);
 
-      res.status(HttpStatusCode.Created).json({
+      res.status(HttpStatusCode.Ok).json({
         success: true,
         data: user,
         message: "User updated successfully",

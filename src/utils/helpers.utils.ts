@@ -1,4 +1,14 @@
+import { Request } from "express";
 import jsonWebToken from "jsonwebtoken/index";
+import {
+  isDate,
+  isDateTime,
+  isDuration,
+  isInt,
+  isLocalDateTime,
+  isLocalTime,
+  isTime,
+} from "neo4j-driver";
 /**
  * Generates jwt token
  * @param payload
@@ -52,7 +62,7 @@ export function toDTO<T, K extends keyof T>(entity: T, keys: K[]): Pick<T, K> {
   keys.forEach((key) => {
     (dto as any)[key] = entity[key];
   });
-  return dto as Pick<T, K>;
+  return toNativeTypes(dto) as Pick<T, K>;
 }
 
 /**
@@ -80,5 +90,85 @@ export function omitDTO<T extends object, K extends keyof T>(
     }
   });
 
-  return dto;
+  return toNativeTypes(dto) as Omit<T, K>;
 }
+
+/**
+ * Convert Neo4j Properties back into JavaScript types
+ *
+ * @param {Record<string, any>} properties
+ * @return {Record<string, any>}
+ */
+export function toNativeTypes(properties: Record<string, any>) {
+  return Object.fromEntries(
+    Object.keys(properties).map((key) => {
+      let value = valueToNativeType(properties[key]);
+
+      return [key, value];
+    })
+  );
+}
+
+/**
+ * Convert an individual value to its JavaScript equivalent
+ *
+ * @param {any} value
+ * @returns {any}
+ */
+function valueToNativeType(value: any) {
+  if (Array.isArray(value)) {
+    value = value.map((innerValue) => valueToNativeType(innerValue));
+  } else if (isInt(value)) {
+    value = value.toNumber();
+  } else if (
+    isDate(value) ||
+    isDateTime(value) ||
+    isTime(value) ||
+    isLocalDateTime(value) ||
+    isLocalTime(value) ||
+    isDuration(value)
+  ) {
+    value = value.toString();
+  } else if (
+    typeof value === "object" &&
+    value !== undefined &&
+    value !== null
+  ) {
+    value = toNativeTypes(value);
+  }
+
+  return value;
+}
+
+export interface IReadQueryParams {
+  sort?: "ASC" | "DESC";
+  page?: number;
+  limit?: number;
+  skip?: number;
+}
+
+export const getPaginationFilters = (req: Request): IReadQueryParams => {
+  const max_limit = 100;
+  const { sort = "DESC", page = 1, limit = 10, ..._ } = req.query;
+
+  const sanitizedSort: "ASC" | "DESC" =
+    String(sort).toUpperCase().trim() === "ASC" ? "ASC" : "DESC";
+
+  const sanitizedPage =
+    typeof Number(page || 1) == "number" ? Number(page || 1) : 1;
+
+  const sanitizedLimit =
+    typeof Number(limit || 10) == "number" ? Number(limit || 10) : 10;
+
+  const skip = Number(
+    (sanitizedPage - 1) * Math.min(sanitizedLimit, max_limit)
+  );
+  console.log({ skip });
+
+  return {
+    page: sanitizedPage,
+    limit: Math.min(sanitizedLimit, max_limit),
+    sort: sanitizedSort,
+    skip,
+  };
+};

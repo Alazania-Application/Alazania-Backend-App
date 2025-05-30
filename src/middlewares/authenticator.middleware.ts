@@ -2,7 +2,7 @@ import { NextFunction, Request, Response } from "express";
 import { HttpStatusCode } from "axios";
 import { asyncHandler } from "./async.middleware";
 import { ErrorResponse } from "../utils";
-import { IUser } from "@/dtos";
+import { IUser } from "@/models";
 import { authService, userService } from "@/services";
 
 /**
