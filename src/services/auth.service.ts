@@ -1,25 +1,39 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import crypto from "crypto";
-import Neo4jService from "./neo4j.service";
+import bycrpt from "bcryptjs";
+import BaseService from "./base.service";
 import { v4 as uuidv4 } from "uuid";
 import { CookieOptions, NextFunction, Request, Response } from "express";
-import { IUser } from "@/types/user";
-import { ErrorResponse, getFormattedUrl, verifyJwtToken } from "@/utils";
+import { IUser } from "@/models";
+import { ErrorResponse, omitDTO, verifyJwtToken } from "@/utils";
 import { HttpStatusCode } from "axios";
 import {
   env,
-  FRONTEND_URL,
   JWT_COOKIE_EXPIRY,
   JWT_EXPIRY,
   JWT_KEY,
   USER_TOKEN,
 } from "@/config";
 import { emailRepository } from "@/repository/email.repository";
+import { User, UserResponseDto } from "@/models/user.model";
+import { otpService } from "./otp.service";
+import { userService } from "./user.service";
 
+/**
+ * Description placeholder
+ *
+ * @typedef {AuthPayload}
+ */
 type AuthPayload = { id?: string; email?: string };
 
-class AuthService extends Neo4jService {
+/**
+ * Description placeholder
+ *
+ * @class AuthService
+ * @typedef {AuthService}
+ * @extends {BaseService}
+ */
+class AuthService extends BaseService {
   /**
    * Checks and validates the password
    */
@@ -38,6 +52,19 @@ class AuthService extends Neo4jService {
   }
 
   // Find staff credentials
+  /**
+   * Description placeholder
+   *
+   * @private
+   * @async
+   * @param {{
+   *       username: string;
+   *       password: string;
+   *     }} param0
+   * @param {string} param0.username
+   * @param {string} param0.password
+   * @returns {Promise<UserResponseDto>}
+   */
   private async findUserByCredentials(
     {
       username,
@@ -46,7 +73,7 @@ class AuthService extends Neo4jService {
       username: string;
       password: string;
     } // : Promise<User | undefined>
-  ) {
+  ): Promise<UserResponseDto> {
     const result = await this.readFromDB(
       `
         MATCH (u:User)
@@ -60,7 +87,11 @@ class AuthService extends Neo4jService {
       throw new ErrorResponse("Invalid credentials", HttpStatusCode.BadRequest);
     }
 
-    const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
+    const doc = result.records[0]?.get("u")?.properties as IUser;
+
+    if (!doc) {
+      throw new ErrorResponse("Invalid credentials", HttpStatusCode.BadRequest);
+    }
 
     if (!doc?.password) {
       if (!doc?.googleIdToken) {
@@ -84,10 +115,12 @@ class AuthService extends Neo4jService {
       throw new ErrorResponse("Invalid credentials", HttpStatusCode.BadRequest);
     }
 
-    const { password: hashedPassword, ...user } = doc;
+    const user = omitDTO(doc, ["password", "isDeleted"]);
+
     if (user.createdAt && typeof user.createdAt.toString === "function") {
       user.createdAt = user.createdAt.toString();
     }
+
     return user;
   }
 
@@ -117,6 +150,15 @@ class AuthService extends Neo4jService {
   }
 
   // Get token from model, create cookie and send response
+  /**
+   * Description placeholder
+   *
+   * @async
+   * @param {IUser} user
+   * @param {number} statusCode
+   * @param {Response} res
+   * @returns {*}
+   */
   sendTokenResponse = async (
     user: IUser,
     statusCode: number,
@@ -160,6 +202,15 @@ class AuthService extends Neo4jService {
       });
   };
 
+  /**
+   * Description placeholder
+   *
+   * @async
+   * @param {Request} req
+   * @param {Response} _
+   * @param {NextFunction} next
+   * @returns {*}
+   */
   isEmailValidAndAvailable = async (
     req: Request,
     _: Response,
@@ -181,6 +232,18 @@ class AuthService extends Neo4jService {
     }
   };
 
+  /**
+   * Description placeholder
+   *
+   * @async
+   * @param {{
+   *     email: string;
+   *     password: string;
+   *   }} param0
+   * @param {string} param0.email
+   * @param {string} param0.password
+   * @returns {unknown}
+   */
   createUser = async ({
     email,
     password,
@@ -190,9 +253,10 @@ class AuthService extends Neo4jService {
   }) => {
     const session = this.getSession();
     try {
+      const hashedPassword = await this.hashPassword(password);
       const payload = {
-        email,
-        password: await this.hashPassword(password),
+        email: email.toLowerCase(),
+        password: hashedPassword,
         id: uuidv4(),
       };
 
@@ -222,10 +286,20 @@ class AuthService extends Neo4jService {
     }
   };
 
+  /**
+   * Description placeholder
+   *
+   * @async
+   * @param {{
+   *     username: string;
+   *     password: string;
+   *   }} payload
+   * @returns {Promise<UserResponseDto>}
+   */
   loginUser = async (payload: {
     username: string;
     password: string;
-  }): Promise<IUser> => {
+  }): Promise<UserResponseDto> => {
     const user = await this.findUserByCredentials(payload);
 
     // if (!user.isActive) {
@@ -258,7 +332,7 @@ class AuthService extends Neo4jService {
   };
 
   sendUserResetPasswordToken = async (username: string) => {
-    const result = await this.readFromDB(
+    const result = await this.readFromDB<IUser>(
       `
        MATCH (u:User)
        WHERE u.username = $username OR u.email = $username OR u.phone = $username
@@ -271,36 +345,88 @@ class AuthService extends Neo4jService {
       return null;
     }
 
-    const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
+   const doc = result.records[0]?.toObject()
 
-    const resetToken = crypto.randomBytes(20).toString("hex");
-
-    await this.writeToDB(
-      `
-      MERGE (u:User {id: $id})
-      SET u.resetPasswordToken = $resetPasswordToken , u.resetPasswordTokenExpiryTime = $resetPasswordTokenExpiryTime
-      `,
-      {
-        resetPasswordToken: crypto
-          .createHash("sha256")
-          .update(resetToken)
-          .digest("hex"),
-        resetPasswordTokenExpiryTime: Date.now() + 10 * 60 * 1000,
-        id: doc?.id,
-      }
-    );
-
-    const resetUrl = `${getFormattedUrl(
-      FRONTEND_URL
-    )}/reset-password/${resetToken}`;
+    const OTP = await otpService.generateOTP(doc?.email);
 
     return await emailRepository.sendResetPasswordMail({
       user: {
         email: doc?.email,
+        firstName: doc?.firstName || "",
       },
-      resetUrl,
+      OTP,
     });
+  };
+
+  resetPassword = async (payload: {
+    username: string;
+    otp: string;
+    password: string;
+  }) => {
+    const user = await userService.getUserByQueryWithCredentials(
+      payload?.username
+    );
+    
+
+    if (!user) {
+      throw new ErrorResponse("User not found", HttpStatusCode.BadRequest);
+    }
+
+    const OTP = await otpService.findOTP(user?.email);
+
+    
+    if (!OTP || OTP?.email != user?.email) {
+      throw new ErrorResponse(
+        "Invalid One Time Password",
+        HttpStatusCode.BadRequest
+      );
+    }
+    
+    const isValidOTP = await bcrypt.compare(payload.otp, OTP.otp);
+
+    if (!isValidOTP) {
+      throw new ErrorResponse(
+        "Invalid or Expired One Time Password",
+        HttpStatusCode.BadRequest
+      );
+    }
+
+    console.log({OTP, otp: payload.otp, isValidOTP})
+
+    const isMatchPassword: boolean = await bcrypt.compare(
+      payload.password,
+      user.password as string
+    );
+
+    if (isMatchPassword) {
+      throw new ErrorResponse(
+        "Can not use the same password as your old password",
+        HttpStatusCode.BadRequest
+      );
+    }
+
+    const hashedPassword = await this.hashPassword(payload.password);
+
+    const result = await this.writeToDB(
+      `
+      MATCH (u:User {email: $email}), (o:OTP {email: $email})
+      SET u.password = $hashedPassword
+      DETACH DELETE o
+      RETURN u
+      `,
+      { email: user?.email, hashedPassword }
+    );
+
+    const updatedUser = result.records.map((v) => v.get("u").properties)[0];
+
+    return updatedUser;
   };
 }
 
+/**
+ * 
+ 
+ *
+ * @type {AuthService}
+ */
 export const authService = new AuthService();

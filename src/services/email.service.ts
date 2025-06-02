@@ -1,11 +1,12 @@
 import dns from "dns";
+import colors from "colors";
 import * as path from "path";
 import fs from "fs";
 import { NextFunction, Request, Response } from "express";
 import Mailjet, { SendEmailV3_1 } from "node-mailjet";
 import { ErrorResponse } from "@/utils";
 import { HttpStatusCode } from "axios";
-import { IUser } from "@/types/user";
+// import { IUser } from "@/dtos/user";
 import { MAIL_PASSWORD, MAIL_USERNAME } from "@/config";
 import { type Transporter, createTransport } from "nodemailer";
 import type Mail from "nodemailer/lib/mailer";
@@ -69,11 +70,12 @@ class EmailService {
     });
 
   sendMail = async (mailOptions: Mail.Options) => {
-    console.log({mailOptions})
-   return await this.transporter.sendMail(mailOptions).then(res => {
-    console.log({res})
-    return res
-   });
+    console.log(colors.yellow(`Sending mail to ${mailOptions?.to}`));
+
+    return await this.transporter.sendMail(mailOptions).then((res) => {
+      console.log(colors.green(`Mail sent successfully`));
+      return res;
+    });
   };
 
   isValidEmailFormat = (email: string) => {

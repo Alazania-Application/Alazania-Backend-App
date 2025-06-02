@@ -1,6 +1,7 @@
-import { Node, Relationship, Integer } from "neo4j-driver";
+import { Node, Integer } from "neo4j-driver";
+import { BaseModel } from "./base.model";
 
-interface IUser {
+export interface IUser extends BaseModel {
   id: string;
   email: string;
   password?: string;
@@ -12,16 +13,18 @@ interface IUser {
   avatar?: string;
   username?: string;
 
-  isDeleted?: boolean;
   isVerified?: boolean;
   isEmailVerified?: boolean;
   isPhoneVerified?: boolean;
 
-  resetPasswordToken?: string;
-  resetPasswordExpire?: Number;
   lastLogin?: Date | string;
-  createdAt?: Date | string;
-  updateAt?: Date | string;
 }
 
 export type User = Node<Integer, IUser>;
+
+export type CreateUserDto = Pick<IUser, "email" | "password">;
+
+export type UserResponseDto = Omit<
+  IUser,
+  "password" | "resetPasswordToken" | "resetPasswordTokenExpiryTime" | "isDeleted" 
+>;

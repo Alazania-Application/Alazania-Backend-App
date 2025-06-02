@@ -1,2 +1,7 @@
 export * from  "./auth.service"
 export * from  "./email.service"
+export * from  "./user.service"
+export * from  "./otp.service"
+export * from  "./topic.service"
+export * from  "./hashtags.service"
+export * from  "./post.service"

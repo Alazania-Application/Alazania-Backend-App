@@ -1,4 +1,4 @@
-import { ValidationChain, validationResult } from "express-validator";
+import { query, ValidationChain, validationResult } from "express-validator";
 import { NextFunction, Request, Response } from "express";
 import { ErrorResponse } from "../utils";
 import { HttpStatusCode } from "axios";
@@ -51,5 +51,22 @@ export default class ValidatorMiddleware {
     });
 
     next();
+  }
+
+  static paginationFilters(): Array<ValidationChain> {
+    return [
+      query("sort")
+        .optional()
+        .isIn(["ASC", "DESC"])
+        .withMessage("Sort must be either ASC or DESC"),
+      query("page")
+        .optional()
+        .isInt({ min: 1 })
+        .withMessage("Page must be a positive integer"),
+      query("limit")
+        .optional()
+        .isInt({ min: 1, max: 100 })
+        .withMessage("Limit must be a positive integer no greater than 100"),
+    ];
   }
 }
