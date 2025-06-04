@@ -25,7 +25,7 @@ COPY --from=build /app/yarn.lock ./
 COPY --from=build /app/dist ./dist
 
 # Install only production dependencies
-RUN yarn install --frozen-lockfile --production
+RUN yarn install --frozen-lockfile
 
 # Use non-root user (optional but more secure)
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
