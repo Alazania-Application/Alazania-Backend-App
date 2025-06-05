@@ -3,6 +3,7 @@ import bycrpt from "bcryptjs";
 import BaseService from "./base.service";
 import { ErrorResponse } from "@/utils";
 import { HttpStatusCode } from "axios";
+import { NodeLabels } from "@/enums";
 
 class OtpService extends BaseService {
   async generateOTP(email: string) {
@@ -18,7 +19,7 @@ class OtpService extends BaseService {
 
     await this.writeToDB(
       `
-      MERGE (o:OTP {email: $email})
+      MERGE (o:${NodeLabels.OTP} {email: $email})
       SET o.createdAt = datetime(), o.expiresAt=datetime() + duration({ minutes: 5 }), o.otp = $otp 
     `,
       {
@@ -33,7 +34,7 @@ class OtpService extends BaseService {
   findOTP = async (email: string) => {
     const result = await this.readFromDB(
       `
-      MATCH (o:OTP {email: $email})
+      MATCH (o:${NodeLabels.OTP} {email: $email})
       WHERE o.expiresAt > datetime()
       RETURN o
         `,
@@ -54,7 +55,7 @@ class OtpService extends BaseService {
   async deleteExpiredOTPS() {
     await super.writeToDB(
       `
-        MATCH (o:OTP)
+        MATCH (o:${NodeLabels.OTP})
         WHERE o.expiresAt < datetime()
         DETACH DELETE o
       `

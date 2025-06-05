@@ -1,3 +1,4 @@
+import { NodeLabels, RelationshipTypes } from "@/enums";
 import BaseService from "./base.service";
 import { CreateTopicInput, Topic } from "@/models";
 import { IReadQueryParams } from "@/utils";
@@ -12,7 +13,7 @@ class TopicService extends BaseService {
 
     const result = await this.writeToDB(
       `
-            MERGE (topic:Topic {slug: $slug})
+            MERGE (topic:${NodeLabels.Topic} {slug: $slug})
             ON CREATE SET
                 topic.name = $name,
                 topic.description = $description,
@@ -46,7 +47,7 @@ class TopicService extends BaseService {
   }): Promise<Topic[]> => {
     const result = await this.readFromDB(
       `
-        MATCH (t:Topic)
+        MATCH (t:${NodeLabels.Topic})
         RETURN t
         ORDER BY t.popularity ${params?.sort}
         SKIP toInteger($skip)
@@ -73,18 +74,21 @@ class TopicService extends BaseService {
   ): Promise<void> => {
     await this.writeToDB(
       `
-        MATCH (u:User {id: $userId})
+        MATCH (u:${NodeLabels.User} {id: $userId})
         UNWIND $topicSlugs AS topicSlug
-        MATCH (t:Topic {slug: topicSlug})
-        MERGE (u)-[r:INTERESTED_IN]->(t)
-        ON CREATE SET r.interestLevel = $interestLevel, r.since = datetime()
-        ON MATCH SET r.interestLevel = $interestLevel
+        MATCH (t:${NodeLabels.Topic} {slug: topicSlug})
+        MERGE (u)-[r:${RelationshipTypes.INTERESTED_IN}]->(t)
+        ON CREATE SET 
+          r.interestLevel = $interestLevel,
+          r.since = datetime()
+        ON MATCH SET 
+          r.interestLevel = $interestLevel
         WITH u, t, r
 
         // Only increment popularity if this is a new follow
 
         WHERE NOT EXISTS {
-          MATCH (u)-[:INTERESTED_IN]->(t)
+          MATCH (u)-[:${RelationshipTypes.INTERESTED_IN}]->(t)
           WHERE r IS NOT NULL
         }
         SET t.popularity = coalesce(t.popularity, 0) + 1
@@ -104,7 +108,7 @@ class TopicService extends BaseService {
   ): Promise<void> => {
     await this.writeToDB(
       `
-        MATCH (u:User {id: $userId})-[r:INTERESTED_IN]->(t:Topic {slug: $topicId})
+        MATCH (u:${NodeLabels.User} {id: $userId})-[r:${RelationshipTypes.INTERESTED_IN}]->(t:${NodeLabels.Topic} {slug: $topicId})
         DELETE r
       `,
       { userId, topicSlug }
@@ -113,7 +117,7 @@ class TopicService extends BaseService {
     // Update topic popularity
     await this.writeToDB(
       `
-        MATCH (t:Topic {slug: $topicSlug})
+        MATCH (t:${NodeLabels.Topic} {slug: $topicSlug})
         SET t.popularity = CASE WHEN t.popularity > 0 THEN t.popularity - 1 ELSE 0 END
       `,
       { topicSlug }
@@ -126,7 +130,7 @@ class TopicService extends BaseService {
   ): Promise<Topic[]> => {
     const result = await this.readFromDB(
       `
-        MATCH (u:User {id: $userId})-[:INTERESTED_IN]->(t:Topic)
+        MATCH (u:${NodeLabels.User} {id: $userId})-[:${RelationshipTypes.INTERESTED_IN}]->(t:${NodeLabels.Topic})
         RETURN t
         ORDER BY t.popularity ${params?.sort}
         SKIP toInteger($skip)
@@ -153,9 +157,9 @@ class TopicService extends BaseService {
     console.log({ userId });
     const result = await this.readFromDB(
       `
-        MATCH (t:Topic)
-        MATCH (u:User {id: $userId})
-        WHERE NOT (u)-[:INTERESTED_IN]->(t)
+        MATCH (t:${NodeLabels.Topic})
+        MATCH (u:${NodeLabels.User} {id: $userId})
+        WHERE NOT (u)-[:${RelationshipTypes.INTERESTED_IN}]->(t)
         RETURN t
         ORDER BY t.popularity ${params?.sort}
         SKIP toInteger($skip)

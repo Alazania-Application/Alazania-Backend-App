@@ -3,8 +3,12 @@ import BaseService from "./base.service";
 import { IUser, UserResponseDto } from "@/models";
 
 class UserService extends BaseService {
-  private withDTO = (doc: IUser) => {
-    return omitDTO(doc, ["password", "isDeleted"]);
+  withDTO = (doc: IUser) => {
+    try {
+      return omitDTO(doc, ["password", "isDeleted"]);
+    } catch (error) {
+      return null;
+    }
   };
 
   getUserById = async (id: string): Promise<UserResponseDto> => {
@@ -16,7 +20,7 @@ class UserService extends BaseService {
       { id }
     );
     const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
-    const user = this.withDTO(doc);
+    const user = this.withDTO(doc) as IUser;
 
     return user;
   };
@@ -31,7 +35,7 @@ class UserService extends BaseService {
       { query }
     );
     const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
-    const user = this.withDTO(doc);
+    const user = this.withDTO(doc) as IUser;
     return user;
   };
 
@@ -53,6 +57,7 @@ class UserService extends BaseService {
       "firstName",
       "lastName",
       "username",
+      "lastLogin",
     ]);
 
     const result = await this.writeToDB(

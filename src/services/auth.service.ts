@@ -1,23 +1,31 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import bycrpt from "bcryptjs";
 import BaseService from "./base.service";
 import { v4 as uuidv4 } from "uuid";
 import { CookieOptions, NextFunction, Request, Response } from "express";
 import { IUser } from "@/models";
-import { ErrorResponse, omitDTO, verifyJwtToken } from "@/utils";
-import { HttpStatusCode } from "axios";
+import {
+  ErrorResponse,
+  isIdToken,
+  omitDTO,
+  toDTO,
+  verifyJwtToken,
+} from "@/utils";
+import axios, { HttpStatusCode } from "axios";
 import {
   env,
+  GOOGLE_CLIENT_ID,
   JWT_COOKIE_EXPIRY,
   JWT_EXPIRY,
   JWT_KEY,
   USER_TOKEN,
 } from "@/config";
 import { emailRepository } from "@/repository/email.repository";
-import { User, UserResponseDto } from "@/models/user.model";
+import { UserResponseDto } from "@/models/user.model";
 import { otpService } from "./otp.service";
 import { userService } from "./user.service";
+import { OAuth2Client } from "google-auth-library";
+import { NodeLabels } from "@/enums";
 
 /**
  * Description placeholder
@@ -76,7 +84,7 @@ class AuthService extends BaseService {
   ): Promise<UserResponseDto> {
     const result = await this.readFromDB(
       `
-        MATCH (u:User)
+        MATCH (u:${NodeLabels.User})
         WHERE u.username = $username OR u.email = $username OR u.phone = $username
         RETURN u
         `,
@@ -117,6 +125,10 @@ class AuthService extends BaseService {
 
     const user = omitDTO(doc, ["password", "isDeleted"]);
 
+    if (!user) {
+      throw new ErrorResponse("Invalid credentials", HttpStatusCode.BadRequest);
+    }
+
     if (user.createdAt && typeof user.createdAt.toString === "function") {
       user.createdAt = user.createdAt.toString();
     }
@@ -128,11 +140,21 @@ class AuthService extends BaseService {
    * Generates a signed JWT token for the user
    * @returns {Promise<string>}
    */
-  private async getSignedJWT(user: IUser) {
+  private getSignedJWT(user: IUser) {
     return jwt.sign({ id: user.id, email: user.email }, JWT_KEY, {
       expiresIn: JWT_EXPIRY,
     });
   }
+
+  /**
+   * Generates a signed JWT token for the user
+   * @returns {Promise<string>}
+   */
+  // private getVerificationToken(user: IUser) {
+  //   return jwt.sign({ id: user.id, email: user.email }, JWT_KEY, {
+  //     expiresIn: VERIFICATION_TOKEN_EXPIRY,
+  //   });
+  // }
 
   /**
    * Verifies a jwt token
@@ -185,6 +207,8 @@ class AuthService extends BaseService {
       options.secure = true;
     }
 
+    await this.updateUserLastLogin(user.id);
+
     res
       .status(statusCode)
       .cookie(USER_TOKEN, token, {
@@ -200,6 +224,43 @@ class AuthService extends BaseService {
         user,
         token,
       });
+  };
+
+  verifyGoogleIdToken = async (token: string) => {
+    try {
+      const OAuthClient = new OAuth2Client(GOOGLE_CLIENT_ID);
+      const ticket = await OAuthClient?.verifyIdToken({
+        idToken: token,
+        audience: GOOGLE_CLIENT_ID,
+      });
+      return { payload: ticket.getPayload() };
+    } catch (error) {
+      throw new ErrorResponse(
+        "Invalid user detected. Please try again",
+        HttpStatusCode.BadRequest
+      );
+    }
+  };
+
+  verifyGoogleAccessToken = async (token: string) => {
+    try {
+      const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!res.ok) {
+        throw new Error("Failed to fetch user info");
+      }
+      const profile = await res.json();
+      return { payload: profile };
+    } catch (error) {
+      // console.log({ error });
+      throw new ErrorResponse(
+        "Invalid user detected. Please try again",
+        HttpStatusCode.BadRequest
+      );
+    }
   };
 
   /**
@@ -220,7 +281,7 @@ class AuthService extends BaseService {
     try {
       const { email } = req.body;
       const result = await session.run(
-        "MATCH (u:User {email: $email}) RETURN u",
+        "MATCH (u:${NodeLabels.User} {email: $email}) RETURN u",
         { email }
       );
       if (result.records.length) {
@@ -262,28 +323,86 @@ class AuthService extends BaseService {
 
       const record = await session.run(
         `
-          MERGE (u:User {email: $email})
+          MERGE (u:${NodeLabels.User} {email: $email})
           ON CREATE SET 
             u.password = $password,
-            u.id = $id
-            u.createdAt = datetime(),
+            u.id = $id,
+            u.isEmailVerified = false,
+            u.createdAt = datetime()
           RETURN u
         `,
         payload
       );
 
-      return record.records.map((record) => {
+      const user = record.records.map((record) => {
         const user = record.get("u").properties;
         return {
           id: user.id,
           email: user.email,
         };
       })[0];
+
+      if (user) {
+        const OTP = await otpService.generateOTP(user?.email);
+
+        await emailRepository.sendVerificationEmail({
+          user,
+          OTP,
+        });
+      }
+
+      return user;
     } catch (error) {
       throw error;
     } finally {
       await session.close();
     }
+  };
+
+  updateUserLastLogin = async (id: string) => {
+    const result = await this.writeToDB(
+      `
+      MERGE (u:${NodeLabels.User} {id: $id})
+      SET u.lastLogin = dateTime()
+      RETURN u
+      `,
+      { id }
+    );
+
+    const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
+
+    return userService.withDTO(doc);
+  };
+
+  createGoogleUser = async (payload: Partial<IUser>) => {
+    const updates = toDTO(payload, [
+      "avatar",
+      "firstName",
+      "lastName",
+      "email",
+      "googleIdToken",
+      "isEmailVerified",
+    ]);
+
+    const result = await this.writeToDB(
+      `
+        MERGE (u:${NodeLabels.User} {email: $email})
+        ON CREATE SET 
+          u.id = $id,
+          u += $updates
+
+        ON MATCH SET  
+          u.id = CASE WHEN u.id IS NULL THEN $id ELSE u.id END,
+          u += $updates
+
+        RETURN u
+      `,
+      { email: payload?.email, updates, id: uuidv4() }
+    );
+
+    const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
+
+    return userService.withDTO(doc) as IUser;
   };
 
   /**
@@ -325,7 +444,7 @@ class AuthService extends BaseService {
     //       link,
     //     },
     //   });
-    //   throw new UserEmailNotVerified();
+    //   throw new ErrorResponse("Account not verified");
     // }
 
     return user;
@@ -334,7 +453,7 @@ class AuthService extends BaseService {
   sendUserResetPasswordToken = async (username: string) => {
     const result = await this.readFromDB<IUser>(
       `
-       MATCH (u:User)
+       MATCH (u:${NodeLabels.User})
        WHERE u.username = $username OR u.email = $username OR u.phone = $username
        RETURN u
       `,
@@ -345,7 +464,7 @@ class AuthService extends BaseService {
       return null;
     }
 
-   const doc = result.records[0]?.toObject()
+    const doc = result.records[0]?.toObject();
 
     const OTP = await otpService.generateOTP(doc?.email);
 
@@ -358,6 +477,54 @@ class AuthService extends BaseService {
     });
   };
 
+  verifyUserEmail = async (email: string, payload?: { otp: string }) => {
+    // const updates = toDTO(payload, ["isEmailVerified"]);
+
+    let isEmailVerified = false;
+
+    if (payload) {
+      if (!payload?.otp) {
+        throw new ErrorResponse(
+          "Invalid or Expired One Time Password",
+          HttpStatusCode.BadRequest
+        );
+      }
+
+      const OTP = await otpService.findOTP(email);
+
+      if (!OTP || OTP?.email != email) {
+        throw new ErrorResponse(
+          "Invalid or Expired One Time Password",
+          HttpStatusCode.BadRequest
+        );
+      }
+
+      const isValidOTP = await bcrypt.compare(payload.otp, OTP.otp);
+
+      if (!isValidOTP) {
+        throw new ErrorResponse(
+          "Invalid or Expired One Time Password",
+          HttpStatusCode.BadRequest
+        );
+      }
+    }
+
+    isEmailVerified = true;
+
+    const result = await this.writeToDB(
+      `
+      MERGE (u:${NodeLabels.User} {email: $email})
+      SET u.isEmailVerified = $isEmailVerified
+      RETURN u
+      `,
+      { email, isEmailVerified }
+    );
+
+    const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
+
+    return omitDTO(doc, ["password", "isDeleted"]) as IUser;
+  };
+
   resetPassword = async (payload: {
     username: string;
     otp: string;
@@ -366,7 +533,6 @@ class AuthService extends BaseService {
     const user = await userService.getUserByQueryWithCredentials(
       payload?.username
     );
-    
 
     if (!user) {
       throw new ErrorResponse("User not found", HttpStatusCode.BadRequest);
@@ -374,14 +540,13 @@ class AuthService extends BaseService {
 
     const OTP = await otpService.findOTP(user?.email);
 
-    
     if (!OTP || OTP?.email != user?.email) {
       throw new ErrorResponse(
         "Invalid One Time Password",
         HttpStatusCode.BadRequest
       );
     }
-    
+
     const isValidOTP = await bcrypt.compare(payload.otp, OTP.otp);
 
     if (!isValidOTP) {
@@ -390,8 +555,6 @@ class AuthService extends BaseService {
         HttpStatusCode.BadRequest
       );
     }
-
-    console.log({OTP, otp: payload.otp, isValidOTP})
 
     const isMatchPassword: boolean = await bcrypt.compare(
       payload.password,
@@ -409,7 +572,7 @@ class AuthService extends BaseService {
 
     const result = await this.writeToDB(
       `
-      MATCH (u:User {email: $email}), (o:OTP {email: $email})
+      MATCH (u:${NodeLabels.User} {email: $email}), (o:${NodeLabels.OTP} {email: $email})
       SET u.password = $hashedPassword
       DETACH DELETE o
       RETURN u

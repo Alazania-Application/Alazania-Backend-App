@@ -78,19 +78,28 @@ export function toDTO<T, K extends keyof T>(entity: T, keys: K[]): Pick<T, K> {
 export function omitDTO<T extends object, K extends keyof T>(
   entity: T,
   keysToOmit: K[]
-): Omit<T, K> {
-  if (entity === null || typeof entity !== "object" || Array.isArray(entity)) {
-    throw new Error("omitDTO: input must be a plain object");
-  }
-  const dto = {} as Omit<T, K>;
-
-  (Object.keys(entity) as (keyof T)[]).forEach((key) => {
-    if (!keysToOmit.includes(key as K)) {
-      (dto as any)[key] = entity[key];
+): Omit<T, K> | null {
+  try {
+    if (
+      entity === null ||
+      typeof entity !== "object" ||
+      Array.isArray(entity)
+    ) {
+      throw new Error("omitDTO: input must be a plain object");
     }
-  });
+    const dto = {} as Omit<T, K>;
 
-  return toNativeTypes(dto) as Omit<T, K>;
+    (Object.keys(entity) as (keyof T)[]).forEach((key) => {
+      if (!keysToOmit.includes(key as K)) {
+        (dto as any)[key] = entity[key];
+      }
+    });
+
+    return toNativeTypes(dto) as Omit<T, K>;
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
 }
 
 /**
@@ -171,4 +180,9 @@ export const getPaginationFilters = (req: Request): IReadQueryParams => {
     sort: sanitizedSort,
     skip,
   };
+};
+
+export const isIdToken = (token: string) => {
+  // A simple heuristic: ID tokens are JWTs and typically have three segments separated by dots
+  return token.split(".").length === 3;
 };
