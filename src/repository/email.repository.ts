@@ -9,7 +9,7 @@ class EmailRepository {
     user: Partial<IUser>;
     OTP: string;
   }) => {
-    const message = `You are receiving this email because you (or someone else) has requested a password reset.`;
+    const message = `Welcome to Alazania`;
 
     let mailOptions = {
       from: `Alazania <ifechi.dev@gmail.com>`,

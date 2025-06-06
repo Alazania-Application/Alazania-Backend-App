@@ -1,12 +1,11 @@
-import { BaseModel } from "./base.model"
+import { BaseModel } from "./base.model";
 
 export interface Hashtag extends BaseModel {
-    hashtagId: string
-    name: string
-    popularity: number
-  }
-  
-  export interface CreateHashtagInput {
-    name: string
-  }
-  
+  slug: string;
+  name: string;
+  popularity?: number;
+}
+
+export interface CreateHashtagInput {
+  name: string;
+}

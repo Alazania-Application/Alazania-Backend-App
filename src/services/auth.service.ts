@@ -277,20 +277,15 @@ class AuthService extends BaseService {
     _: Response,
     next: NextFunction
   ) => {
-    const session = this.getSession();
-    try {
-      const { email } = req.body;
-      const result = await session.run(
-        "MATCH (u:${NodeLabels.User} {email: $email}) RETURN u",
-        { email }
-      );
-      if (result.records.length) {
-        throw new Error("Email already exists");
-      }
-      next();
-    } finally {
-      await session.close();
+    const { email } = req.body;
+    const result = await this.readFromDB(
+      `MATCH (u:${NodeLabels.User} {email: $email}) RETURN u`,
+      { email }
+    );
+    if (result.records.length) {
+      throw new Error("Email already exists");
     }
+    next();
   };
 
   /**
@@ -312,17 +307,15 @@ class AuthService extends BaseService {
     email: string;
     password: string;
   }) => {
-    const session = this.getSession();
-    try {
-      const hashedPassword = await this.hashPassword(password);
-      const payload = {
-        email: email.toLowerCase(),
-        password: hashedPassword,
-        id: uuidv4(),
-      };
+    const hashedPassword = await this.hashPassword(password);
+    const payload = {
+      email: email.toLowerCase(),
+      password: hashedPassword,
+      id: uuidv4(),
+    };
 
-      const record = await session.run(
-        `
+    const record = await this.writeToDB(
+      `
           MERGE (u:${NodeLabels.User} {email: $email})
           ON CREATE SET 
             u.password = $password,
@@ -331,32 +324,22 @@ class AuthService extends BaseService {
             u.createdAt = datetime()
           RETURN u
         `,
-        payload
-      );
+      payload
+    );
 
-      const user = record.records.map((record) => {
-        const user = record.get("u").properties;
-        return {
-          id: user.id,
-          email: user.email,
-        };
-      })[0];
+    const user = record.records.map((record) => {
+      const user = record.get("u").properties;
+      return {
+        id: user.id,
+        email: user.email,
+      };
+    })[0];
 
-      if (user) {
-        const OTP = await otpService.generateOTP(user?.email);
-
-        await emailRepository.sendVerificationEmail({
-          user,
-          OTP,
-        });
-      }
-
-      return user;
-    } catch (error) {
-      throw error;
-    } finally {
-      await session.close();
+    if (user) {
+      await this.sendEmailVerification(user);
     }
+
+    return user;
   };
 
   updateUserLastLogin = async (id: string) => {
@@ -428,30 +411,20 @@ class AuthService extends BaseService {
     //   );
     // }
 
-    // if (!user.emailVerified) {
-    //   const emailToken = (user as UserType).getVerificationToken();
+    if (!user.isEmailVerified) {
+      await this.sendEmailVerification(user);
 
-    //   const queryParams = new URLSearchParams();
-
-    //   if (emailToken) {
-    //     queryParams.set("token", emailToken);
-    //   }
-
-    //   const link = `${FRONTEND_URL}/recruiter/auth/verify-user?${queryParams?.toString()}`;
-    //   await EmailRepository.sendEmailConfirmation({
-    //     email: payload.email,
-    //     data: {
-    //       link,
-    //     },
-    //   });
-    //   throw new ErrorResponse("Account not verified");
-    // }
+      throw new ErrorResponse(
+        "Account not verified.",
+        HttpStatusCode.BadRequest
+      );
+    }
 
     return user;
   };
 
   sendUserResetPasswordToken = async (username: string) => {
-    const result = await this.readFromDB<IUser>(
+    const result = await this.readFromDB(
       `
        MATCH (u:${NodeLabels.User})
        WHERE u.username = $username OR u.email = $username OR u.phone = $username
@@ -464,9 +437,23 @@ class AuthService extends BaseService {
       return null;
     }
 
-    const doc = result.records[0]?.toObject();
+    const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
+    const { OTP, hashedOTP } = await otpService.generateOTP();
 
-    const OTP = await otpService.generateOTP(doc?.email);
+    await this.writeToDB(
+      `
+      MERGE (o:${NodeLabels.OTP} {email: $email, type: $type })
+      SET 
+        o.createdAt = datetime(), 
+        o.expiresAt=datetime() + duration({ minutes: 5 }), 
+        o.otp = $otp 
+    `,
+      {
+        otp: hashedOTP,
+        type: "reset-password",
+        email: doc?.email,
+      }
+    );
 
     return await emailRepository.sendResetPasswordMail({
       user: {
@@ -490,7 +477,7 @@ class AuthService extends BaseService {
         );
       }
 
-      const OTP = await otpService.findOTP(email);
+      const OTP = await otpService.findOTP(email, "verification");
 
       if (!OTP || OTP?.email != email) {
         throw new ErrorResponse(
@@ -525,6 +512,37 @@ class AuthService extends BaseService {
     return omitDTO(doc, ["password", "isDeleted"]) as IUser;
   };
 
+  sendEmailVerification = async (user: IUser) => {
+    if (user?.isEmailVerified) {
+      throw new ErrorResponse(
+        "Account already verified",
+        HttpStatusCode.BadRequest
+      );
+    }
+
+    const { OTP, hashedOTP } = await otpService.generateOTP();
+
+    await this.writeToDB(
+      `
+      MERGE (o:${NodeLabels.OTP} {email: $email, type: $type })
+      SET 
+        o.createdAt = datetime(), 
+        o.expiresAt=datetime() + duration({ minutes: 5 }), 
+        o.otp = $otp 
+    `,
+      {
+        otp: hashedOTP,
+        type: "verification",
+        email: user?.email,
+      }
+    );
+
+    await emailRepository.sendVerificationEmail({
+      user,
+      OTP,
+    });
+  };
+
   resetPassword = async (payload: {
     username: string;
     otp: string;
@@ -538,7 +556,7 @@ class AuthService extends BaseService {
       throw new ErrorResponse("User not found", HttpStatusCode.BadRequest);
     }
 
-    const OTP = await otpService.findOTP(user?.email);
+    const OTP = await otpService.findOTP(user?.email, "reset-password");
 
     if (!OTP || OTP?.email != user?.email) {
       throw new ErrorResponse(

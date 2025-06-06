@@ -6,7 +6,7 @@ import { HttpStatusCode } from "axios";
 import { NodeLabels } from "@/enums";
 
 class OtpService extends BaseService {
-  async generateOTP(email: string) {
+  async generateOTP() {
     const OTP = otpGenerator.generate(6, {
       digits: true,
       lowerCaseAlphabets: false,
@@ -17,28 +17,17 @@ class OtpService extends BaseService {
     const salt = await bycrpt.genSalt(10);
     const hashedOTP = await bycrpt.hash(OTP, salt);
 
-    await this.writeToDB(
-      `
-      MERGE (o:${NodeLabels.OTP} {email: $email})
-      SET o.createdAt = datetime(), o.expiresAt=datetime() + duration({ minutes: 5 }), o.otp = $otp 
-    `,
-      {
-        otp: hashedOTP,
-        email,
-      }
-    );
-
-    return OTP;
+    return { OTP, hashedOTP };
   }
 
-  findOTP = async (email: string) => {
+  findOTP = async (email: string, type: "verification" | "reset-password") => {
     const result = await this.readFromDB(
       `
-      MATCH (o:${NodeLabels.OTP} {email: $email})
+      MATCH (o:${NodeLabels.OTP} {email: $email, type: $type})
       WHERE o.expiresAt > datetime()
       RETURN o
         `,
-      { email }
+      { email, type }
     );
 
     if (!result?.records?.length) {
@@ -49,7 +38,7 @@ class OtpService extends BaseService {
     }
 
     const otp = result.records.map((v) => v.get("o").properties)[0];
-    return otp
+    return otp;
   };
 
   async deleteExpiredOTPS() {

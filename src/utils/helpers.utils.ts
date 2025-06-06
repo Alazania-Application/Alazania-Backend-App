@@ -1,6 +1,7 @@
 import { Request } from "express";
 import jsonWebToken from "jsonwebtoken/index";
 import {
+  Integer,
   isDate,
   isDateTime,
   isDuration,
@@ -8,6 +9,7 @@ import {
   isLocalDateTime,
   isLocalTime,
   isTime,
+  int,
 } from "neo4j-driver";
 /**
  * Generates jwt token
@@ -151,14 +153,14 @@ function valueToNativeType(value: any) {
 
 export interface IReadQueryParams {
   sort?: "ASC" | "DESC";
-  page?: number;
-  limit?: number;
-  skip?: number;
+  page?: number | Integer;
+  limit?: number | Integer;
+  skip?: number | Integer;
 }
 
 export const getPaginationFilters = (req: Request): IReadQueryParams => {
   const max_limit = 100;
-  const { sort = "DESC", page = 1, limit = 10, ..._ } = req.query;
+  const { sort = "DESC", page = 1, limit = 10, ...otherQueries } = req.query;
 
   const sanitizedSort: "ASC" | "DESC" =
     String(sort).toUpperCase().trim() === "ASC" ? "ASC" : "DESC";
@@ -172,13 +174,13 @@ export const getPaginationFilters = (req: Request): IReadQueryParams => {
   const skip = Number(
     (sanitizedPage - 1) * Math.min(sanitizedLimit, max_limit)
   );
-  console.log({ skip });
 
   return {
-    page: sanitizedPage,
-    limit: Math.min(sanitizedLimit, max_limit),
+    page: int(sanitizedPage),
+    limit: int(Math.min(sanitizedLimit, max_limit)),
     sort: sanitizedSort,
-    skip,
+    skip: int(skip),
+    ...otherQueries
   };
 };
 

@@ -37,7 +37,7 @@ export default class BaseService {
     return BaseService.instance;
   }
 
-  protected getSession(): Session {
+  private getSession(): Session {
     return this.driver.session();
   }
 
@@ -55,13 +55,19 @@ export default class BaseService {
     }
   ): Promise<QueryResult<T>> {
     const session = this.getSession();
-    const finalParams = { ...params };
+    const finalParams = {
+      sort: "DESC",
+      page: 1,
+      limit: 10,
+      skip: 0,
+      ...params,
+    };
 
     if (
       finalParams.skip !== undefined &&
       typeof finalParams.skip !== "number"
     ) {
-      finalParams.skip = parseInt(finalParams.skip, 10);
+      finalParams.skip = parseInt(String(finalParams.skip), 0);
     } else if (finalParams.skip !== undefined) {
       finalParams.skip = Math.floor(finalParams.skip);
     }
@@ -70,10 +76,13 @@ export default class BaseService {
       finalParams.limit !== undefined &&
       typeof finalParams.limit !== "number"
     ) {
-      finalParams.limit = parseInt(finalParams.limit, 10);
+      finalParams.limit = parseInt(String(finalParams.limit), 10);
     } else if (finalParams.limit !== undefined) {
       finalParams.limit = Math.floor(finalParams.limit);
     }
+
+    finalParams.limit = neo4j.int(finalParams.limit||10)
+    finalParams.skip = neo4j.int(finalParams.skip||0)
 
     return await session
       .executeRead((tx: ManagedTransaction) => tx.run<T>(cypher, finalParams))

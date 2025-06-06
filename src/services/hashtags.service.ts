@@ -4,6 +4,7 @@ import BaseService from "./base.service";
 import slugify from "slugify";
 import { topics } from "@/data";
 import { NodeLabels, RelationshipTypes } from "@/enums";
+import { IReadQueryParams } from "@/utils";
 
 class HashtagService extends BaseService {
   seedHashtagsAndTopics = async () => {
@@ -139,35 +140,6 @@ class HashtagService extends BaseService {
     );
   };
 
-  followHashtags = async (
-    userId: string,
-    hashtagSlugs: string
-  ): Promise<void> => {
-    await this.writeToDB(
-      `
-        MATCH (u:${NodeLabels.User} {id: $userId})
-        UNWIND $hashtagSlugs AS hashtagSlug
-        MERGE (h:${NodeLabels.Hashtag} {slug: hashtagSlug})
-        MERGE (u)-[r:${RelationshipTypes.FOLLOWS_HASHTAG}]->(h)
-        SET r.followedAt = datetime($followedAt)
-        WITH u, t, r
-
-        // Only increment popularity if this is a new follow
-
-        WHERE NOT EXISTS {
-          MATCH (u)-[:${RelationshipTypes.FOLLOWS_HASHTAG}]->(t)
-          WHERE r IS NOT NULL
-        }
-        SET h.popularity = coalesce(h.popularity, 0) + 1
-      `,
-      {
-        userId,
-        hashtagSlugs,
-        followedAt: new Date().toISOString(),
-      }
-    );
-  };
-
   unfollowHashtag = async (
     userId: string,
     hashtagId: string
@@ -190,27 +162,57 @@ class HashtagService extends BaseService {
     );
   };
 
-  getHashtagsByTopic = async (topicSlug: string): Promise<Hashtag[]> => {
-    const result = await this.readFromDB(
-      `
-        MATCH (t:${NodeLabels.Topic} {slug: $topicSlug})-[:${RelationshipTypes.CONTAINS}]->(h:${NodeLabels.Hashtag})
+  getHashtagsByTopic = async (
+    params?: Record<string, any>
+  ): Promise<Partial<Hashtag[]>> => {
+    let cypherQuery: string;
+    let queryParams: Record<string, any> = {};
+
+    if (params?.topicSlugs?.length) {
+      cypherQuery = `
+        UNWIND $topicSlugs AS topicSlug
+        MATCH (t:${NodeLabels.Topic} {slug: topicSlug})-[:${RelationshipTypes.CONTAINS}]->(h:${NodeLabels.Hashtag})
         RETURN h
         ORDER BY h.popularity DESC
-      `,
-      { topicSlug }
-    );
+        LIMIT $limit
+      `;
+      queryParams.topicSlugs = params.topicSlugs;
+    } else if (params?.userId) {
+      cypherQuery = `
+          MATCH (u:${NodeLabels.User} {id: $userId})
+          -[:${RelationshipTypes.INTERESTED_IN}]
+          ->(t:${NodeLabels.Topic})
+          -[:${RelationshipTypes.CONTAINS}]
+          ->(h:${NodeLabels.Hashtag})
+          RETURN h
+          ORDER BY h.popularity DESC
+          LIMIT $limit
+        `;
+      queryParams.userId = params.userId;
+    } else {
+      cypherQuery = `
+        MATCH (h:${NodeLabels.Hashtag})
+        RETURN h
+        ORDER BY h.popularity DESC
+        LIMIT $limit
+      `;
+    }
+
+    const result = await this.readFromDB(cypherQuery, { ...params });
 
     return result.records.map((record) => {
       const hashtagNode = record.get("h")?.properties as Hashtag;
+
       return {
-        hashtagId: hashtagNode?.hashtagId,
+        slug: hashtagNode?.slug,
         name: hashtagNode?.name,
-        popularity: hashtagNode?.popularity,
       };
     });
   };
 
-  getUserFollowedHashtags = async (userId: string): Promise<Hashtag[]> => {
+  getUserFollowedHashtags = async (
+    userId: string
+  ): Promise<Partial<Hashtag>[]> => {
     const result = await this.readFromDB(
       `
         MATCH (u:${NodeLabels.User} {id: $userId})-[:${RelationshipTypes.FOLLOWS_HASHTAG}]->(h:${NodeLabels.Hashtag})
@@ -223,9 +225,8 @@ class HashtagService extends BaseService {
     return result.records.map((record) => {
       const hashtagNode = record.get("h")?.properties as Hashtag;
       return {
-        hashtagId: hashtagNode?.hashtagId,
+        slug: hashtagNode?.slug,
         name: hashtagNode?.name,
-        popularity: hashtagNode?.popularity,
       };
     });
   };
@@ -244,12 +245,47 @@ class HashtagService extends BaseService {
     return result.records.map((record) => {
       const hashtagNode = record.get("h")?.properties as Hashtag;
       return {
-        hashtagId: hashtagNode?.hashtagId,
+        slug: hashtagNode?.slug,
         name: hashtagNode?.name,
-        popularity: hashtagNode?.popularity,
       };
     });
   };
+
+  followHashtags = async (
+    userId: string,
+    hashtagSlugs: string[],
+    interestLevel = 5
+  ): Promise<void> => {
+    await this.writeToDB(
+      `
+        MATCH (u:${NodeLabels.User} {id: $userId})
+        UNWIND $hashtagSlugs AS hashtagSlug
+        MATCH (h:${NodeLabels.Hashtag} {slug: hashtagSlug})
+        MERGE (u)-[r:${RelationshipTypes.INTERESTED_IN}]->(h)
+        ON CREATE SET 
+          r.interestLevel = $interestLevel,
+          r.since = datetime()
+        ON MATCH SET 
+          r.interestLevel = $interestLevel
+        WITH u, h, r
+
+        // Only increment popularity if this is a new follow
+
+        WHERE NOT EXISTS {
+          MATCH (u)-[:${RelationshipTypes.FOLLOWS_HASHTAG}]->(h)
+          WHERE r IS NOT NULL
+        }
+        SET h.popularity = coalesce(h.popularity, 0) + 1
+      `,
+      {
+        userId,
+        hashtagSlugs,
+        interestLevel,
+        since: new Date().toISOString(),
+      }
+    );
+  };
+
 }
 
 export const hashtagService = new HashtagService();

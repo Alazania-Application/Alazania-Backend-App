@@ -39,12 +39,7 @@ class TopicService extends BaseService {
     };
   };
 
-  getAllTopics = async (params: {
-    sort?: "ASC" | "DESC";
-    page?: number;
-    limit?: number;
-    skip?: number;
-  }): Promise<Topic[]> => {
+  getAllTopics = async (params?: IReadQueryParams): Promise<Topic[]> => {
     const result = await this.readFromDB(
       `
         MATCH (t:${NodeLabels.Topic})
@@ -178,6 +173,8 @@ class TopicService extends BaseService {
       };
     });
   };
+
+
 }
 
 export const topicService = new TopicService();

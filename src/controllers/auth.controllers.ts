@@ -9,7 +9,6 @@ import {
   GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET,
   GOOGLE_WEB_CLIENT_REDIRECT,
-  GOOGLE_WEB_CLIENT_SUCCESS_REDIRECT,
 } from "@/config";
 import { URLSearchParams } from "url";
 
@@ -42,6 +41,24 @@ class AuthController {
         success: true,
         data: user,
         message: "Account created successfully",
+      });
+    },
+  ];
+
+  /**
+   * Logs in a user
+   */
+  resendEmailVerificationMail = [
+    ValidatorMiddleware.inputs([
+      body("username", "Email/Username/Phone is required").exists().isString(),
+    ]),
+    async (req: Request, res: Response, next: NextFunction) => {
+      const user = await userService.getUserByQuery(req.body.username);
+      await authService.sendEmailVerification(user);
+
+      res.status(HttpStatusCode.Ok).json({
+        success: true,
+        message: "Email sent successfully",
       });
     },
   ];
