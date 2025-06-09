@@ -1,0 +1,34 @@
+name: Node.js CI
+
+on:
+ push:
+   branches: ['main']  # Trigger on both staging and production branches
+
+jobs:
+ staging-deploy:
+   if: github.ref == 'refs/heads/main'
+   runs-on: ubuntu-latest
+
+   steps:
+     - name: Checkout code
+       uses: actions/checkout@v2
+
+     - name: Deploy to Staging Server
+       uses: appleboy/ssh-action@master
+       with:
+         host: ${{ secrets.SSH_HOST }}
+         username: ${{ secrets.SSH_USERNAME }}
+         key: ${{ secrets.SSH_KEY }}
+         port: ${{ secrets.SSH_PORT }}
+         command_timeout: 200m
+         script: |
+           cd /usr/Alazania/Alazania-Backend-App
+           git pull origin main
+           docker build -t  alazania-backend:latest .
+           docker rm -f alazania-backend || true
+           docker run --name alazania-backend --env-file .env -d -p 8088:8088 alazania-backend:latest
+
+
+# This workflow will deploy to the staging server when code is pushed to the main branch
+# and to the production server when code is pushed to the Prod branch.  
+# movement
