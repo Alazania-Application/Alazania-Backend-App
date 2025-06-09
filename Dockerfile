@@ -4,18 +4,18 @@ FROM node:20-alpine AS build
 WORKDIR /app
 
 # Required for building native dependencies (if any)
-RUN apk add --no-cache python3 make g++
+# RUN apk add --no-cache python3 make g++
 
 # Install dependencies
 COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile --legacy-peer-deps
+RUN yarn install --frozen-lockfile 
 
 # Copy source files and build
 COPY . .
 RUN yarn build
 
 # ------------ RUNTIME STAGE ------------
-FROM node:22-alpine AS runtime
+FROM node:20-alpine AS runtime
 
 WORKDIR /app
 
@@ -28,8 +28,8 @@ COPY --from=build /app/dist ./dist
 RUN yarn install --frozen-lockfile
 
 # Use non-root user (optional but more secure)
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-USER appuser
+# RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+# USER appuser
 
 EXPOSE 8088
 
