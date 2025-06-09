@@ -27,8 +27,15 @@ export const SPACES_ACCESS_KEY = process.env.SPACES_ACCESS_KEY || "";
 export const SPACES_BUCKET = process.env.SPACES_BUCKET || "";
 export const SPACES_REGION = process.env.SPACES_REGION || "";
 
+// Google auth
+export const GOOGLE_CLIENT_ID= process.env.GOOGLE_CLIENT_ID
+export const GOOGLE_CLIENT_SECRET= process.env.GOOGLE_CLIENT_SECRET
+export const GOOGLE_WEB_CLIENT_REDIRECT= process.env.GOOGLE_WEB_CLIENT_REDIRECT
+export const GOOGLE_WEB_CLIENT_SUCCESS_REDIRECT= process.env.GOOGLE_WEB_CLIENT_SUCCESS_REDIRECT
+
 // CONSTANTS
 export const MAX_FILE_SIZE_MB = 5; //5MB
 export const MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024; //5MB
 export const MAX_FILE_COUNT = 5;
 export const MAX_FILE_SIZE_ERROR = `File size should not exceed ${MAX_FILE_SIZE / 1024 / 1024}MB`;
+

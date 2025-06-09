@@ -39,11 +39,17 @@ topicRouter.post(
 topicRouter.post(
   "/hashtag/follow",
   authMiddleWare.protectRoute,
-  interestController.addUserInterests
+  interestController.followHashtags
+);
+
+topicRouter.get(
+  "/hashtags/my-topics", // user query instead
+  authMiddleWare.protectRoute,
+  interestController.getUserTopicHashtags
 );
 
 topicRouter.get(
   "/hashtags", // user query instead
   authMiddleWare.protectRoute,
-  interestController.addUserInterests
+  interestController.getTopicHashtags
 );

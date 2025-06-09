@@ -4,6 +4,7 @@ import ValidatorMiddleware from "@/middlewares/validator.middleware";
 import { userService } from "@/services";
 import { HttpStatusCode } from "axios";
 import { Request, Response, NextFunction } from "express";
+import { body } from "express-validator";
 
 class UserController {
   getProfile = async (req: Request, res: Response, next: NextFunction) => {
@@ -50,6 +51,13 @@ class UserController {
       });
     },
   ];
+
+  onboard = [
+    ValidatorMiddleware.dynamicFieldValidator,
+    ValidatorMiddleware.inputs([
+      body("topics", "").optional()
+    ])
+  ]
 }
 
 export const userController = new UserController();

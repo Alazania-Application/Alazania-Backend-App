@@ -1,6 +1,7 @@
 import { Request } from "express";
 import jsonWebToken from "jsonwebtoken/index";
 import {
+  Integer,
   isDate,
   isDateTime,
   isDuration,
@@ -8,6 +9,7 @@ import {
   isLocalDateTime,
   isLocalTime,
   isTime,
+  int,
 } from "neo4j-driver";
 /**
  * Generates jwt token
@@ -78,19 +80,28 @@ export function toDTO<T, K extends keyof T>(entity: T, keys: K[]): Pick<T, K> {
 export function omitDTO<T extends object, K extends keyof T>(
   entity: T,
   keysToOmit: K[]
-): Omit<T, K> {
-  if (entity === null || typeof entity !== "object" || Array.isArray(entity)) {
-    throw new Error("omitDTO: input must be a plain object");
-  }
-  const dto = {} as Omit<T, K>;
-
-  (Object.keys(entity) as (keyof T)[]).forEach((key) => {
-    if (!keysToOmit.includes(key as K)) {
-      (dto as any)[key] = entity[key];
+): Omit<T, K> | null {
+  try {
+    if (
+      entity === null ||
+      typeof entity !== "object" ||
+      Array.isArray(entity)
+    ) {
+      throw new Error("omitDTO: input must be a plain object");
     }
-  });
+    const dto = {} as Omit<T, K>;
 
-  return toNativeTypes(dto) as Omit<T, K>;
+    (Object.keys(entity) as (keyof T)[]).forEach((key) => {
+      if (!keysToOmit.includes(key as K)) {
+        (dto as any)[key] = entity[key];
+      }
+    });
+
+    return toNativeTypes(dto) as Omit<T, K>;
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
 }
 
 /**
@@ -142,14 +153,14 @@ function valueToNativeType(value: any) {
 
 export interface IReadQueryParams {
   sort?: "ASC" | "DESC";
-  page?: number;
-  limit?: number;
-  skip?: number;
+  page?: number | Integer;
+  limit?: number | Integer;
+  skip?: number | Integer;
 }
 
 export const getPaginationFilters = (req: Request): IReadQueryParams => {
   const max_limit = 100;
-  const { sort = "DESC", page = 1, limit = 10, ..._ } = req.query;
+  const { sort = "DESC", page = 1, limit = 10, ...otherQueries } = req.query;
 
   const sanitizedSort: "ASC" | "DESC" =
     String(sort).toUpperCase().trim() === "ASC" ? "ASC" : "DESC";
@@ -163,12 +174,17 @@ export const getPaginationFilters = (req: Request): IReadQueryParams => {
   const skip = Number(
     (sanitizedPage - 1) * Math.min(sanitizedLimit, max_limit)
   );
-  console.log({ skip });
 
   return {
-    page: sanitizedPage,
-    limit: Math.min(sanitizedLimit, max_limit),
+    page: int(sanitizedPage),
+    limit: int(Math.min(sanitizedLimit, max_limit)),
     sort: sanitizedSort,
-    skip,
+    skip: int(skip),
+    ...otherQueries
   };
+};
+
+export const isIdToken = (token: string) => {
+  // A simple heuristic: ID tokens are JWTs and typically have three segments separated by dots
+  return token.split(".").length === 3;
 };
