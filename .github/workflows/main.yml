@@ -22,7 +22,7 @@ jobs:
          port: ${{ secrets.SSH_PORT }}
          command_timeout: 200m
          script: |
-           cd /usr/Alazania/Alazania-Backend-App
+           cd /usr/Alazania-Application/Alazania-Backend-App
            git pull origin main
            docker build -t  alazania-backend:latest .
            docker rm -f alazania-backend || true
