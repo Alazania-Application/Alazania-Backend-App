@@ -11,6 +11,13 @@ userRouter.get(
   userController.getProfile
 );
 userRouter.put(
+  "/onboard/update",
+  authMiddleWare.protectRoute,
+  multerConfig.single("avatar"),
+  userController.handleAvatarUpload,
+  userController.onboardUpdate
+);
+userRouter.put(
   "/update",
   authMiddleWare.protectRoute,
   multerConfig.single("avatar"),

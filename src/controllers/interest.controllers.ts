@@ -85,8 +85,8 @@ class InterestController {
 
   followHashtags = [
     ValidatorMiddleware.inputs([
-      body("hashtags", "Please provide topics").exists().isArray(),
-      body("hashtags.*", "Each topic must be a string").exists().isString(),
+      body("hashtags", "Please provide hashtags").exists().isArray(),
+      body("hashtags.*", "Each hashtag must be a string").exists().isString(),
     ]),
 
     async (req: Request, res: Response, next: NextFunction) => {

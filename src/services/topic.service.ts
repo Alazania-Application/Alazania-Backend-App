@@ -53,6 +53,7 @@ class TopicService extends BaseService {
 
     return result.records.map((record) => {
       const topicNode = record.get("t")?.properties as Topic;
+      console.log({ topicNode });
       return {
         name: topicNode?.name,
         slug: topicNode?.slug,
@@ -173,8 +174,6 @@ class TopicService extends BaseService {
       };
     });
   };
-
-
 }
 
 export const topicService = new TopicService();

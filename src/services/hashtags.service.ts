@@ -1,10 +1,8 @@
 import { CreateHashtagInput, Hashtag } from "@/models";
-import { v4 as uuidv4 } from "uuid";
 import BaseService from "./base.service";
 import slugify from "slugify";
 import { topics } from "@/data";
 import { NodeLabels, RelationshipTypes } from "@/enums";
-import { IReadQueryParams } from "@/utils";
 
 class HashtagService extends BaseService {
   seedHashtagsAndTopics = async () => {
@@ -18,75 +16,64 @@ class HashtagService extends BaseService {
       return;
     }
 
-    const allHashtagPromises: Promise<any>[] = [];
-
-    topics.forEach((topic) => {
-      const topicSlug = slugify(topic.name, {
-        trim: true,
-        lower: true,
-      });
+    const topicsAndHashtags = topics.map((topic) => {
       const topicName = String(topic.name).trim();
-
-      const topicPromise = this.writeToDB(
-        `
-          MERGE (topic:${NodeLabels.Topic} {slug: $topicSlug})
-          ON CREATE SET
-            topic.name = $topicName,
-            topic.description = $description,
-            topic.popularity = 0
-          ON MATCH SET
-            topic.name = $topicName,
-            topic.description = $description,
-        `,
-        {
-          topicName,
-          topicSlug,
-          description: topic.description,
-        }
-      );
-
-      allHashtagPromises.push(topicPromise);
-      // Link to hashtags if provided
-      if (topic.hashtags && topic.hashtags.length > 0) {
-        topic.hashtags.forEach((hashtag) => {
-          const hashtagName = hashtag.startsWith("#")
-            ? hashtag.slice(1)
-            : hashtag;
-
-          const hashtagSlug = slugify(hashtag, {
-            trim: true,
-            lower: true,
-            remove: /#/gi,
-          });
-
-          const hashtagPromise = this.writeToDB(
-            `
-              MERGE (hashtag:${NodeLabels.Hashtag} {slug: $hashtagSlug})
-              ON CREATE SET 
-                hashtag.popularity = 0,
-                hashtag.name = $hashtagName
-              ON MATCH SET 
-                hashtag.name = $hashtagName
-              MERGE (topic:${NodeLabels.Topic} {slug: $topicSlug})
-             
-
-              MERGE (topic)-[r:${RelationshipTypes.CONTAINS}]->(hashtag)
-              SET r.relevance = $relevance
-            `,
-            {
-              hashtagSlug,
-              hashtagName,
-              topicSlug,
-              relevance: 5,
-            }
-          );
-          allHashtagPromises.push(hashtagPromise);
-        });
-      }
+      const hashtags = topic.hashtags.map((hashtag) => ({
+        name: hashtag.startsWith("#") ? hashtag.slice(1) : hashtag,
+        slug: slugify(hashtag, {
+          trim: true,
+          lower: true,
+          remove: /#/gi,
+        }),
+      }));
+      return {
+        name: topicName,
+        slug: slugify(topic.name, {
+          trim: true,
+          lower: true,
+        }),
+        description: topic.description,
+        hashtags,
+      };
     });
 
-    await Promise.all(allHashtagPromises);
-    console.log("Hashtags have been seeded to the DB");
+    const query = `
+      UNWIND $topics as topic
+      MERGE (t:${NodeLabels.Topic} {slug: topic.slug})
+      ON CREATE SET
+        t.slug = topic.slug,
+        t.name = topic.name,
+        t.description = topic.description,
+        t.popularity = 0
+      ON MATCH SET
+        t.name = topic.name,
+        t.description = topic.description
+
+      WITH t, topic
+      UNWIND topic.hashtags as hashtag
+      MERGE (h:${NodeLabels.Hashtag} {slug: hashtag.slug})
+        ON CREATE SET
+          h.slug = hashtag.slug,
+          h.popularity = 0,
+          h.name = hashtag.name
+        ON MATCH SET 
+          h.name = hashtag.name
+
+      MERGE (t)-[r:${RelationshipTypes.CONTAINS}]->(h)
+        ON CREATE SET
+          r.relevance = $defaultRelevance // Use a parameter for default relevance, or derive from input
+        ON MATCH SET
+          r.relevance = $defaultRelevance // You might want a different strategy here for existing relations
+
+      RETURN t, h
+    `;
+
+    await this.writeToDB(query, {
+      topics: topicsAndHashtags,
+      defaultRelevance: 5,
+    });
+
+    console.log("Topics and Hashtags have been seeded to the DB");
   };
 
   createHashtag = async (inputs: CreateHashtagInput[]): Promise<any> => {
@@ -285,7 +272,6 @@ class HashtagService extends BaseService {
       }
     );
   };
-
 }
 
 export const hashtagService = new HashtagService();
