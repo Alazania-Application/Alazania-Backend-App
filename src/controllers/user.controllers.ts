@@ -3,9 +3,8 @@ import { uploadFile } from "@/middlewares/multer.middleware";
 import ValidatorMiddleware from "@/middlewares/validator.middleware";
 import { hashtagService, topicService, userService } from "@/services";
 import { HttpStatusCode } from "axios";
-import { Request, Response, NextFunction } from "express";
+import { NextFunction, Request, Response } from "express";
 import { body } from "express-validator";
-import { ErrorResponse } from "@/utils";
 import slugify from "slugify";
 
 class UserController {
@@ -53,7 +52,7 @@ class UserController {
         .isLength({ min: 3, max: 20 })
         .matches(/^[A-Za-z][A-Za-z0-9_\-\.]*$/),
     ]),
-    async (req: Request, res: Response, next: NextFunction) => {
+    async (req: Request, res: Response) => {
       const user = await userService.updateUser(req?.user?.id, req.body);
 
       res.status(HttpStatusCode.Ok).json({
@@ -80,7 +79,7 @@ class UserController {
       body("hashtags", "Please provide hashtags").optional().isArray(),
       body("hashtags.*", "Each hashtag must be a string").exists().isString(),
     ]),
-    async (req: Request, res: Response, next: NextFunction) => {
+    async (req: Request, res: Response) => {
       const userId = req?.user?.id;
       const topics = req.body?.topics;
       const hashtags = req.body?.hashtags;

@@ -158,9 +158,13 @@ export interface IReadQueryParams {
   skip?: number | Integer;
 }
 
-export const getPaginationFilters = (req: Request): IReadQueryParams => {
+export const getPaginationFilters = ({
+  sort = "DESC",
+  page = 1,
+  limit = 10,
+  ...otherQueries
+}: IReadQueryParams): IReadQueryParams => {
   const max_limit = 100;
-  const { sort = "DESC", page = 1, limit = 10, ...otherQueries } = req.query;
 
   const sanitizedSort: "ASC" | "DESC" =
     String(sort).toUpperCase().trim() === "ASC" ? "ASC" : "DESC";
@@ -180,7 +184,7 @@ export const getPaginationFilters = (req: Request): IReadQueryParams => {
     limit: int(Math.min(sanitizedLimit, max_limit)),
     sort: sanitizedSort,
     skip: int(skip),
-    ...otherQueries
+    ...otherQueries,
   };
 };
 

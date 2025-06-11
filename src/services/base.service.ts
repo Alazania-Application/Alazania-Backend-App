@@ -6,13 +6,7 @@ import neo4j, {
   type Session,
 } from "neo4j-driver";
 import { db_password, db_uri, db_username } from "@/config";
-import { IReadQueryParams } from "@/utils";
-
-interface BaseQueryParams {
-  sortOrder?: "ASC" | "DESC";
-  page?: number;
-  pageSize?: number;
-}
+import { getPaginationFilters, IReadQueryParams } from "@/utils";
 
 export default class BaseService {
   private driver: Driver;
@@ -55,13 +49,7 @@ export default class BaseService {
     }
   ): Promise<QueryResult<T>> {
     const session = this.getSession();
-    const finalParams = {
-      sort: "DESC",
-      page: 1,
-      limit: 10,
-      skip: 0,
-      ...params,
-    };
+    const finalParams = getPaginationFilters(params);
 
     if (
       finalParams.skip !== undefined &&
@@ -81,8 +69,8 @@ export default class BaseService {
       finalParams.limit = Math.floor(finalParams.limit);
     }
 
-    finalParams.limit = neo4j.int(finalParams.limit||10)
-    finalParams.skip = neo4j.int(finalParams.skip||0)
+    finalParams.limit = neo4j.int(finalParams.limit || 10);
+    finalParams.skip = neo4j.int(finalParams.skip || 0);
 
     return await session
       .executeRead((tx: ManagedTransaction) => tx.run<T>(cypher, finalParams))
@@ -105,46 +93,47 @@ export default class BaseService {
 
   public async initializeDatabase(): Promise<void> {
     const session = this.getSession();
-    try {
-      // Create constraints
-      await session.executeWrite(async (tx: ManagedTransaction) => {
-        const constraintPromises = [
-          // USER constraints
-          tx.run(
-            "CREATE CONSTRAINT user_email IF NOT EXISTS FOR (user:User) REQUIRE user.email IS UNIQUE"
-          ),
-          tx.run(
-            "CREATE CONSTRAINT user_phone IF NOT EXISTS FOR (user:User) REQUIRE user.phone IS UNIQUE"
-          ),
-          tx.run(
-            "CREATE CONSTRAINT user_username IF NOT EXISTS FOR (u:User) REQUIRE u.username IS UNIQUE"
-          ),
-          tx.run(
-            "CREATE CONSTRAINT user_id IF NOT EXISTS FOR (u:User) REQUIRE u.id IS UNIQUE"
-          ),
-          // Post constraints
-          tx.run(
-            "CREATE CONSTRAINT post_id IF NOT EXISTS FOR (post:Post) REQUIRE post.id IS UNIQUE"
-          ),
-          tx.run(
-            "CREATE CONSTRAINT message_id IF NOT EXISTS FOR (m:Message) REQUIRE m.id IS UNIQUE"
-          ),
+    // Create constraints
+    const constraints = [
+      // === User Constraints ===
+      ["user_email", "FOR (user:User) REQUIRE user.email IS UNIQUE"],
+      ["user_phone", "FOR (user:User) REQUIRE user.phone IS UNIQUE"],
+      ["user_username", "FOR (u:User) REQUIRE u.username IS UNIQUE"],
+      ["user_id", "FOR (u:User) REQUIRE u.id IS UNIQUE"],
 
-          // Topic constraints
-          tx.run(
-            "CREATE CONSTRAINT topic_name IF NOT EXISTS FOR (topic:Topic) REQUIRE topic.slug IS UNIQUE"
-          ),
-          // Add other constraint creation promises here
-        ];
+      // === Post & Message Constraints ===
+      ["post_id", "FOR (post:Post) REQUIRE post.id IS UNIQUE"],
+      ["message_id", "FOR (m:Message) REQUIRE m.id IS UNIQUE"],
 
-        await Promise.all(constraintPromises);
+      // === Topic Constraint ===
+      ["topic_name", "FOR (topic:Topic) REQUIRE topic.slug IS UNIQUE"],
+    ];
+
+    const indexes = [
+      ["user_id_index", "FOR (u:User) ON (u.id)"],
+      ["post_createdAt_index", "FOR (p:Post) ON (p.createdAt)"],
+      ["hashtag_slug_index", "FOR (h:Hashtag) ON (h.slug)"],
+    ];
+
+    await session
+      .executeWrite(async (tx: ManagedTransaction) => {
+        const contraintPromises = constraints.map(([name, definition]) =>
+          tx.run(`CREATE CONSTRAINT ${name} IF NOT EXISTS ${definition}`)
+        );
+        const indexPromises = indexes.map(([name, definition]) =>
+          tx.run(`CREATE INDEX ${name} IF NOT EXISTS ${definition}`)
+        );
+
+        await Promise.all([...contraintPromises, ...indexPromises]);
+      })
+      .then(() => {
+        console.log("Database initialized with constraints");
+      })
+      .catch((error) => {
+        console.error("Error initializing database:", error);
+      })
+      .finally(async () => {
+        await session.close();
       });
-      console.log("Database initialized with constraints");
-    } catch (error) {
-      console.error("Error initializing database:", error);
-      throw error;
-    } finally {
-      await session.close();
-    }
   }
 }

@@ -3,9 +3,11 @@ import BaseService from "./base.service";
 import slugify from "slugify";
 import { topics } from "@/data";
 import { NodeLabels, RelationshipTypes } from "@/enums";
+import { IReadQueryParams } from "@/utils";
 
 class HashtagService extends BaseService {
   seedHashtagsAndTopics = async () => {
+    const now = new Date()
     const existingHashtags = await this.readFromDB(`
       MATCH(h:${NodeLabels.Hashtag})
       RETURN h.slug
@@ -44,18 +46,20 @@ class HashtagService extends BaseService {
         t.slug = topic.slug,
         t.name = topic.name,
         t.description = topic.description,
-        t.popularity = 0
+        t.popularity = 0,
+        t.createdAt = datetime($createdAt)
       ON MATCH SET
         t.name = topic.name,
         t.description = topic.description
-
       WITH t, topic
       UNWIND topic.hashtags as hashtag
       MERGE (h:${NodeLabels.Hashtag} {slug: hashtag.slug})
         ON CREATE SET
           h.slug = hashtag.slug,
           h.popularity = 0,
-          h.name = hashtag.name
+          h.name = hashtag.name,
+          h.createdAt = datetime($createdAt),
+          h.lastUsedAt = datetime($createdAt)
         ON MATCH SET 
           h.name = hashtag.name
 
@@ -71,6 +75,7 @@ class HashtagService extends BaseService {
     await this.writeToDB(query, {
       topics: topicsAndHashtags,
       defaultRelevance: 5,
+      createdAt: now.toISOString(),
     });
 
     console.log("Topics and Hashtags have been seeded to the DB");
@@ -78,6 +83,7 @@ class HashtagService extends BaseService {
 
   createHashtag = async (inputs: CreateHashtagInput[]): Promise<any> => {
     const allHashtagPromises: Promise<any>[] = [];
+    const now = new Date()
 
     inputs.forEach((hashtag) => {
       const hashtagName = hashtag.name.startsWith("#")
@@ -96,12 +102,15 @@ class HashtagService extends BaseService {
           ON CREATE SET 
             hashtag.popularity = 0,
             hashtag.name = $hashtagName
+            hashtag.createdAt = datetime($createdAt)
+            hashtag.lastUsedAt = datetime($createdAt)
           ON MATCH SET 
             hashtag.name = $hashtagName
         `,
         {
           hashtagSlug,
           hashtagName,
+          createdAt: now.toISOString()
         }
       );
 
@@ -218,23 +227,24 @@ class HashtagService extends BaseService {
     });
   };
 
-  getTrendingHashtags = async (limit = 20): Promise<Hashtag[]> => {
+  getTrendingHashtags = async (
+    params: IReadQueryParams & { userId?: string } = {}
+  ): Promise<Hashtag[]> => {
     const result = await this.readFromDB(
       `
         MATCH (h:${NodeLabels.Hashtag})
-        RETURN h
+        WHERE h.lastUsedAt >= datetime() - duration('P7D')
+        RETURN h.slug AS hashtag, h.popularity
         ORDER BY h.popularity DESC
+        SKIP $skip
         LIMIT $limit
       `,
-      { limit }
+      params
     );
 
     return result.records.map((record) => {
-      const hashtagNode = record.get("h")?.properties as Hashtag;
-      return {
-        slug: hashtagNode?.slug,
-        name: hashtagNode?.name,
-      };
+      const hashtag = record.get("hashtag")
+      return hashtag;
     });
   };
 

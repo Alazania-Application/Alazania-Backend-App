@@ -1,6 +1,8 @@
 import { CreatePostInput, Post } from "@/models";
 import { v4 as uuidv4 } from "uuid";
 import BaseService from "./base.service";
+import { NodeLabels, RelationshipTypes } from "@/enums";
+import { IReadQueryParams } from "@/utils";
 
 class PostService extends BaseService {
   async createPost(input: CreatePostInput): Promise<Post> {
@@ -11,7 +13,7 @@ class PostService extends BaseService {
     const result = await this.writeToDB(
       `
         MATCH (u:User {userId: $userId})
-        CREATE (p:Post {
+        CREATE (p:${NodeLabels.Post} {
           postId: $postId,
           content: $content,
           createdAt: datetime($createdAt),
@@ -19,7 +21,7 @@ class PostService extends BaseService {
           comments: 0,
           shares: 0
         })
-        CREATE (u)-[:CREATES]->(p)
+        CREATE (u)-[:${RelationshipTypes.POSTED}]->(p)
         RETURN p
       `,
       {
@@ -34,9 +36,10 @@ class PostService extends BaseService {
     if (input.topicId) {
       await this.writeToDB(
         `
-          MATCH (p:Post {postId: $postId})
-          MATCH (t:Topic {topicId: $topicId})
-          CREATE (p)-[:BELONGS_TO]->(t)
+          MATCH (p:${NodeLabels.Post} {postId: $postId})
+          MATCH (t:${NodeLabels.Topic} {topicId: $topicId})
+          WHERE t IS NOT NULL 
+          CREATE (p)-[:${RelationshipTypes.BELONGS_TO}]->(t)
         `,
         { postId, topicId: input.topicId }
       );
@@ -50,16 +53,22 @@ class PostService extends BaseService {
           : hashtagName;
         await this.writeToDB(
           `
-            MATCH (p:Post {postId: $postId})
-            MERGE (h:Hashtag {name: $hashtagName})
-            ON CREATE SET h.hashtagId = $hashtagId, h.popularity = 0
-            CREATE (p)-[:HAS]->(h)
-            SET h.popularity = h.popularity + 1
+            MATCH (p:${NodeLabels.Post} {postId: $postId})
+            MERGE (h:${NodeLabels.Hashtag} {name: $hashtagName})
+            ON CREATE SET 
+              h.hashtagId = $hashtagId, 
+              h.popularity = 0,
+              h.lastUsedAt = datetime($lastUsedAt)
+            CREATE (p)-[:${RelationshipTypes.HAS_HASHTAG}]->(h)
+            SET 
+              h.popularity = h.popularity + 1
+              h.lastUsedAt = datetime($lastUsedAt)
           `,
           {
             postId,
             hashtagName: cleanName,
             hashtagId: uuidv4(),
+            lastUsedAt: now.toISOString()
           }
         );
       }
@@ -78,13 +87,16 @@ class PostService extends BaseService {
     };
   }
 
-  async getPersonalizedFeed(userId: string, limit = 20): Promise<any[]> {
+  async getFollowingFeed(
+    userId: string,
+    params: IReadQueryParams = {}
+  ): Promise<any[]> {
     const result = await this.readFromDB(
       `
-        MATCH (u:User {userId: $userId})
-        OPTIONAL MATCH (u)-[:FOLLOWS]->(followedUser:User)-[:CREATES]->(followedPost:Post)
-        OPTIONAL MATCH (u)-[:INTERESTED_IN]->(topic:Topic)<-[:BELONGS_TO]-(topicPost:Post)
-        OPTIONAL MATCH (u)-[:FOLLOWS]->(hashtag:Hashtag)<-[:HAS]-(hashtagPost:Post)
+        MATCH (u:${NodeLabels.User} {userId: $userId})
+        OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS}]->(followedUser:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(followedPost:${NodeLabels.Post})
+        OPTIONAL MATCH (u)-[:${RelationshipTypes.INTERESTED_IN}]->(topic:${NodeLabels.Topic})<-[:${RelationshipTypes.BELONGS_TO}]-(topicPost:${NodeLabels.Post})
+        OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS}]->(hashtag:${NodeLabels.Hashtag})<-[:${RelationshipTypes.HAS_HASHTAG}]-(hashtagPost:${NodeLabels.Post})
         
         WITH u, 
              COLLECT(DISTINCT followedPost) as followedPosts,
@@ -92,11 +104,12 @@ class PostService extends BaseService {
              COLLECT(DISTINCT hashtagPost) as hashtagPosts
         
         UNWIND (followedPosts + topicPosts + hashtagPosts) as post
+        WITH u, post, followedPosts, topicPosts, hashtagPosts
         WHERE post IS NOT NULL
         
-        MATCH (creator:User)-[:CREATES]->(post)
-        OPTIONAL MATCH (post)-[:BELONGS_TO]->(topic:Topic)
-        OPTIONAL MATCH (post)-[:HAS]->(hashtag:Hashtag)
+        MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(post)
+        OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
+        OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
         
         WITH post, creator, topic, COLLECT(hashtag.name) as hashtags,
              CASE 
@@ -107,10 +120,83 @@ class PostService extends BaseService {
              END as relevanceScore
         
         RETURN post, creator, topic, hashtags, relevanceScore
-        ORDER BY relevanceScore DESC, post.createdAt DESC
+        ORDER BY relevanceScore DESC , post.createdAt DESC
+        SKIP $skip
         LIMIT $limit
       `,
-      { userId, limit }
+      { userId, ...params }
+    );
+
+    return result.records.map((record) => {
+      const post = record.get("post");
+      const creator = record.get("creator");
+      const topic = record.get("topic");
+      const hashtags = record.get("hashtags");
+
+      return {
+        postId: post.properties.postId,
+        content: post.properties.content,
+        createdAt: new Date(post.properties.createdAt),
+        engagement: {
+          likes: post.properties.likes,
+          comments: post.properties.comments,
+          shares: post.properties.shares,
+        },
+        creator: {
+          userId: creator.properties.userId,
+          username: creator.properties.username,
+        },
+        topic: topic
+          ? {
+              topicId: topic.properties.topicId,
+              name: topic.properties.name,
+            }
+          : null,
+        hashtags: hashtags || [],
+      };
+    });
+  }
+
+  async getPersonalizedFeed(
+    userId: string,
+    params: IReadQueryParams = {}
+  ): Promise<any[]> {
+    const result = await this.readFromDB(
+      `
+        MATCH (u:${NodeLabels.User} {userId: $userId})
+
+        OPTIONAL MATCH (u)-[interest:${RelationshipTypes.INTERESTED_IN}]->(topic:${NodeLabels.Topic})<-[:${RelationshipTypes.BELONGS_TO}]-(topicPost:${NodeLabels.Post})
+        OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS}]->(hashtag:${NodeLabels.Hashtag})<-[:${RelationshipTypes.HAS_HASHTAG}]-(hashtagPost:${NodeLabels.Post})
+        
+        WITH u, 
+            COLLECT(DISTINCT { post: topicPost, topicScore: interest.interestLevel }) AS topicResults,
+            COLLECT(DISTINCT hashtagPost) as hashtagPosts
+        
+        // Flatten posts into one list, adding default scores where missing
+        UNWIND topicResults AS topicResult
+        WITH u, topicResult.post AS post, topicResult.topicScore AS topicScore, hashtagPosts
+
+        WITH u, post, 
+            COALESCE(topicScore, 0) AS topicScore,
+            CASE WHEN post IN hashtagPosts THEN 1 ELSE 0 END AS hashtagScore
+
+        // Calculate weighted relevance
+        WITH u, post, topicScore, hashtagScore,
+            topicScore * 0.7 + hashtagScore * 0.3 AS relevanceScore
+
+        // Get additional data for display
+        OPTIONAL MATCH (post)<-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User})
+        OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
+        OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
+
+        WITH post, creator, topic, COLLECT(DISTINCT hashtag.name) AS hashtags, relevanceScore
+
+        RETURN post, creator, topic, hashtags, relevanceScore
+        ORDER BY relevanceScore DESC, post.createdAt DESC
+        SKIP $skip
+        LIMIT $limit
+      `,
+      { userId, ...params }
     );
 
     return result.records.map((record) => {
@@ -147,7 +233,7 @@ class PostService extends BaseService {
     await this.writeToDB(
       `
         MATCH (u:User {userId: $userId})
-        MATCH (p:Post {postId: $postId})
+        MATCH (p:${NodeLabels.Post} {postId: $postId})
         MERGE (u)-[r:ENGAGES_WITH]->(p)
         SET r.engagementType = 'like',
             r.timestamp = datetime($timestamp)
@@ -165,7 +251,7 @@ class PostService extends BaseService {
     await this.writeToDB(
       `
         MATCH (u:User {userId: $userId})
-        MATCH (p:Post {postId: $postId})
+        MATCH (p:${NodeLabels.Post} {postId: $postId})
         CREATE (u)-[r:ENGAGES_WITH]->(p)
         SET r.engagementType = 'share',
             r.timestamp = datetime($timestamp)
@@ -193,7 +279,7 @@ class PostService extends BaseService {
 
     await this.writeToDB(
       `
-      MATCH (u:User {id: $userId})-[r:INTERESTED_IN]->(t:Topic {slug: $topicSlug})
+      MATCH (u:User {id: $userId})-[r:INTERESTED_IN]->(t:${NodeLabels.Topic} {slug: $topicSlug})
       SET r.interestLevel = CASE 
         WHEN r.interestLevel + $boost > 10 THEN 10 
         ELSE r.interestLevel + $boost 
