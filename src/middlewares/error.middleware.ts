@@ -1,6 +1,7 @@
 import { AxiosError, HttpStatusCode } from "axios";
 import { ErrorResponse } from "../utils";
 import { Request, Response, NextFunction, ErrorRequestHandler } from "express";
+import { Neo4jError } from "neo4j-driver";
 
 interface CustomError extends Error {
   errno?: number;
@@ -21,7 +22,7 @@ export const errorHandler: ErrorRequestHandler = (
   next: NextFunction
 ): void => {
   let error: CustomError = { ...err };
-
+  
   if (err instanceof ErrorResponse) {
     res.status(HttpStatusCode.BadRequest).json({
       success: false,
@@ -113,6 +114,7 @@ export const errorHandler: ErrorRequestHandler = (
         field: (error as any)?.field,
       };
     }
+
     if (error.code === "LIMIT_FILE_SIZE") {
       error.message = `Unexpected file upload limit exceeded.`;
       error.data = {
@@ -120,13 +122,34 @@ export const errorHandler: ErrorRequestHandler = (
       };
     }
 
-    console.log({ error });
+    if (err instanceof Neo4jError) {
+      const neo4jError = err;
+
+
+      let message = "Internal Server Error";
+      let statusCode = HttpStatusCode.InternalServerError;
+
+      // Customize message based on classification or code
+      if (neo4jError.classification === "CLIENT_ERROR") {
+        statusCode = HttpStatusCode.BadRequest;
+      }
+      // else if (neo4jError.classification === "TRANSIENT_ERROR") {
+      //   // statusCode = HttpStatusCode.ServiceUnavailable;
+      //   message = "Temporary database issue. Please try again later.";
+      // }
+
+      error = new ErrorResponse(message, statusCode);
+    }
+
+    console.log({ err });
+
+   
 
     // Logger.err(error.message || "Server Error", true);
 
     res.status(error.statusCode || HttpStatusCode.InternalServerError).json({
       success: false,
-      message: error.message || "Server Error",
+      message: error.message || "Internal Server Error",
       data: error.data,
       errors: error.errors,
     });

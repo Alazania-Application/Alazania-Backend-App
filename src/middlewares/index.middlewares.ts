@@ -9,6 +9,7 @@ import { logRequestProcessingTime } from "./requestTimeLogger";
 import { errorHandler } from "./error.middleware";
 import indexRoutes from "../routes";
 import { HttpStatusCode } from "axios";
+import ValidatorMiddleware from "./validator.middleware";
 
 export default (app: Application) => {
   app.use(
@@ -35,10 +36,12 @@ export default (app: Application) => {
   if (env === "production") {
     app.use(helmet());
   }
+  
+  app.use(ValidatorMiddleware.inputs(ValidatorMiddleware.paginationFilters()));
 
   //Use app routes
   indexRoutes(app);
-  
+
   app.get("/api/v1", (_, res) => {
     res.status(HttpStatusCode.Ok).send({
       message: "Hello world!",

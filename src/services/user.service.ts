@@ -51,6 +51,23 @@ class UserService extends BaseService {
     return result.records.map((v) => v.get("u").properties)[0] as IUser;
   };
 
+  updateOnboardUser = async (id: string, payload: Partial<IUser>) => {
+    const updates = toDTO(payload, ["avatar", "username"]);
+
+    const result = await this.writeToDB(
+      `
+      MERGE (u:User {id: $id})
+      SET u += $updates
+      RETURN u
+      `,
+      { id, updates }
+    );
+
+    const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
+
+    return this.withDTO(doc);
+  };
+
   updateUser = async (id: string, payload: Partial<IUser>) => {
     const updates = toDTO(payload, [
       "avatar",

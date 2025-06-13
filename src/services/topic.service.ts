@@ -10,6 +10,7 @@ class TopicService extends BaseService {
       trim: true,
       lower: true,
     });
+    const now = new Date()
 
     const result = await this.writeToDB(
       `
@@ -17,7 +18,8 @@ class TopicService extends BaseService {
             ON CREATE SET
                 topic.name = $name,
                 topic.description = $description,
-                topic.popularity = 0
+                topic.popularity = 0,
+                topic.createdAt = datetime($createdAt)
             ON MATCH SET
                 topic.name = $name,
                 topic.description = $description
@@ -27,6 +29,7 @@ class TopicService extends BaseService {
         slug,
         name: String(input.name).trim(),
         description: input.description,
+        createdAt: now.toISOString()
       }
     );
 
@@ -45,8 +48,8 @@ class TopicService extends BaseService {
         MATCH (t:${NodeLabels.Topic})
         RETURN t
         ORDER BY t.popularity ${params?.sort}
-        SKIP toInteger($skip)
-        LIMIT toInteger($limit)
+        SKIP $skip
+        LIMIT $limit
       `,
       params
     );
@@ -173,8 +176,6 @@ class TopicService extends BaseService {
       };
     });
   };
-
-
 }
 
 export const topicService = new TopicService();

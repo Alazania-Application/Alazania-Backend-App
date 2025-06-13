@@ -2,53 +2,59 @@ import { interestController } from "@/controllers/interest.controllers";
 import { authMiddleWare } from "@/middlewares/authenticator.middleware";
 import { Router } from "express";
 
-export const topicRouter = Router();
+export const interestRouter = Router();
 
 // TOPICS
-topicRouter.get(
+interestRouter.get(
   "/topic/all",
   authMiddleWare.protectRoute,
   interestController.getAllTopics
 );
 
-topicRouter.get(
+interestRouter.get(
   "/topic/my-topics",
   authMiddleWare.protectRoute,
   interestController.getUserSelectedTopics
 );
 
-topicRouter.get(
+interestRouter.get(
   "/topic/not-following",
   authMiddleWare.protectRoute,
   interestController.getUserUnSelectedTopics
 );
 
-topicRouter.post(
+interestRouter.post(
   "/topic/follow",
   authMiddleWare.protectRoute,
   interestController.addUserInterests
 );
 
-topicRouter.post(
+interestRouter.post(
   "/topic/follow",
   authMiddleWare.protectRoute,
   interestController.addUserInterests
 );
 
 // HASHTAGS
-topicRouter.post(
+interestRouter.post(
   "/hashtag/follow",
   authMiddleWare.protectRoute,
   interestController.followHashtags
 );
 
-topicRouter.get(
-  "/hashtags/my-topics", // user query instead
+interestRouter.get(
+  "/hashtags/my-topics",
   authMiddleWare.protectRoute,
   interestController.getUserTopicHashtags
 );
 
-topicRouter.get(
+interestRouter.get(
+  "/hashtags/trending",
+  authMiddleWare.protectRoute,
+  interestController.getTrendingHashtags
+);
+
+interestRouter.get(
   "/hashtags", // user query instead
   authMiddleWare.protectRoute,
   interestController.getTopicHashtags

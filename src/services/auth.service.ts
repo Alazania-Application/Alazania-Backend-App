@@ -415,7 +415,7 @@ class AuthService extends BaseService {
       await this.sendEmailVerification(user);
 
       throw new ErrorResponse(
-        "Account not verified.",
+        "Account not verified. You have been sent a mail with instructions on how to verify your account",
         HttpStatusCode.BadRequest
       );
     }
