@@ -108,7 +108,7 @@ class UserController {
         );
         promises.push(hashtagService.followHashtags(userId, hashtagArray));
       }
-      
+
       if (Object.values(req.body).length) {
         promises.push(userService.updateOnboardUser(userId, req.body));
       }
@@ -118,6 +118,20 @@ class UserController {
       res.status(HttpStatusCode.Ok).json({
         success: true,
         message: "Profile updated successfully",
+      });
+    },
+  ];
+
+  getSuggestedUsers = [
+    async (req: Request, res: Response) => {
+      const userId = req?.user?.id;
+
+      const users = await userService.getSuggestedUsers({ userId });
+
+      res.status(HttpStatusCode.Ok).json({
+        success: true,
+        data: users,
+        message: "Users fetched successfully",
       });
     },
   ];

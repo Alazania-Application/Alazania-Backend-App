@@ -3,11 +3,16 @@ import colors from "colors";
 import * as path from "path";
 import fs from "fs";
 import { NextFunction, Request, Response } from "express";
-import Mailjet, { SendEmailV3_1 } from "node-mailjet";
+import Mailjet, { LibraryResponse, SendEmailV3_1 } from "node-mailjet";
 import { ErrorResponse } from "@/utils";
 import { HttpStatusCode } from "axios";
 // import { IUser } from "@/dtos/user";
-import { MAIL_PASSWORD, MAIL_USERNAME } from "@/config";
+import {
+  MAIL_PASSWORD,
+  MAIL_USERNAME,
+  MJ_APIKEY_PRIVATE,
+  MJ_APIKEY_PUBLIC,
+} from "@/config";
 import { type Transporter, createTransport } from "nodemailer";
 import type Mail from "nodemailer/lib/mailer";
 import type SMTPTransport from "nodemailer/lib/smtp-transport";
@@ -20,10 +25,11 @@ class EmailService {
   >;
 
   constructor() {
-    this.mailjet = new Mailjet({
-      apiKey: process.env.MJ_APIKEY_PUBLIC || "your-api-key",
-      apiSecret: process.env.MJ_APIKEY_PRIVATE || "your-api-secret",
+    this.mailjet = new Mailjet.Client({
+      apiKey: MJ_APIKEY_PUBLIC,
+      apiSecret: MJ_APIKEY_PRIVATE,
     });
+
     this.transporter = createTransport({
       service: "Gmail",
       host: "smtp.gmail.com",
@@ -134,6 +140,55 @@ class EmailService {
       );
     }
     next();
+  };
+  test = async () => {
+    const request = await this.mailjet.post("send", { version: "v3.1" }).request({
+      Messages: [
+        {
+          From: {
+            Email: 'kolade@fusionintel.io',
+            Name: 'Me',
+          },
+          To: [
+            {
+              Email: 'ifechimine@gmail.com',
+              Name: 'You',
+            },
+          ],
+          Subject: 'My first Mailjet Email!',
+          TextPart: 'Greetings from Mailjet!',
+          HTMLPart:
+            '<h3>Dear passenger 1, welcome to <a href="https://www.mailjet.com/">Mailjet</a>!</h3><br />May the delivery force be with you!',
+        },
+      ],
+    });
+    const data: SendEmailV3_1.Body = {
+      Messages: [
+        {
+          From: {
+            Email: 'kolade@fusionintel.io',
+            Name: 'Me',
+          },
+          To: [
+            {
+              Email: 'ifechimine@gmail.com',
+              Name: 'You',
+            },
+          ],
+          Subject: 'Your email flight plan!',
+          HTMLPart: '<h3>Dear passenger, welcome to Mailjet!</h3><br />May the delivery force be with you!',
+          TextPart: 'Dear passenger, welcome to Mailjet! May the delivery force be with you!',
+        },
+      ],
+    };
+
+    const response: LibraryResponse<SendEmailV3_1.Response> = await this.mailjet
+          .post('send', { version: 'v3.1' })
+          .request(data);
+
+  const { Status } = response.body.Messages[0];
+
+    console.log({Status, res: JSON.stringify(request.body)});
   };
 }
 

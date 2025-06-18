@@ -12,7 +12,7 @@ class EmailRepository {
     const message = `Welcome to Alazania`;
 
     let mailOptions = {
-      from: `Alazania <ifechi.dev@gmail.com>`,
+      from: `Alazania <ifechimine@gmail.com>`,
       to: `${user.email}`,
       subject: "Verify Your Account",
       text: `Hey ${
@@ -34,7 +34,7 @@ class EmailRepository {
     const message = `You are receiving this email because you (or someone else) has requested a password reset.`;
 
     let mailOptions = {
-      from: `Alazania <ifechi.dev@gmail.com>`,
+      from: `Alazania <ifechimine@gmail.com>`,
       to: `${user.email}`,
       subject: "Reset Password OTP",
       text: `Hey ${

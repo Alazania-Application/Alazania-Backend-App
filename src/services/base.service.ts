@@ -2,11 +2,13 @@ import neo4j, {
   ManagedTransaction,
   QueryResult,
   RecordShape,
+  Transaction,
   type Driver,
   type Session,
 } from "neo4j-driver";
 import { db_password, db_uri, db_username } from "@/config";
 import { getPaginationFilters, IReadQueryParams } from "@/utils";
+import { NodeLabels, RelationshipTypes } from "@/enums";
 
 export default class BaseService {
   private driver: Driver;
@@ -111,9 +113,12 @@ export default class BaseService {
 
     const indexes = [
       ["user_id_index", "FOR (u:User) ON (u.id)"],
+      ["user_id_index", "FOR (u:User) ON (u.id)"],
       ["post_createdAt_index", "FOR (p:Post) ON (p.createdAt)"],
       ["hashtag_slug_index", "FOR (h:Hashtag) ON (h.slug)"],
     ];
+
+   
 
     await session
       .executeWrite(async (tx: ManagedTransaction) => {
@@ -123,11 +128,19 @@ export default class BaseService {
         const indexPromises = indexes.map(([name, definition]) =>
           tx.run(`CREATE INDEX ${name} IF NOT EXISTS ${definition}`)
         );
+        const userSearch = tx.run(
+          `CREATE FULLTEXT INDEX user_search_index IF NOT EXISTS FOR (u:${NodeLabels.User}) ON EACH [u.username, u.firstname, u.lastname, u.email]`
+        );
 
-        await Promise.all([...contraintPromises, ...indexPromises]);
+        await Promise.all([...contraintPromises, ...indexPromises, userSearch]);
       })
-      .then(() => {
+      .then(async () => {
         console.log("Database initialized with constraints");
+
+        await session.executeWrite(
+          async (tx) => await this.seedRelationshipTypes(tx)
+        );
+
       })
       .catch((error) => {
         console.error("Error initializing database:", error);
@@ -136,4 +149,24 @@ export default class BaseService {
         await session.close();
       });
   }
+
+  private seedRelationshipTypes = async (tx: ManagedTransaction) => {
+    // Ensure two dummy nodes exist
+    await tx.run(`
+      MERGE (a:User {id: "_seedA", isDemo: true})
+      MERGE (b:User {id: "_seedB", isDemo: true})
+      MERGE (a)-[:${RelationshipTypes.FOLLOWS} {isDemo: true}]->(b)
+    `);
+
+    // Create one relationship of each type between the dummy nodes
+    const relationshipPromises = Object.values(RelationshipTypes).map(
+      (relType) =>
+        tx.run(`
+        MATCH (a:${NodeLabels.User} {id: "_seedA"}), (b:${NodeLabels.User} {id: "_seedB"})
+        MERGE (a)-[:${relType} {isDemo: true}]->(b)
+      `)
+    );
+
+    await Promise.all(relationshipPromises);
+  };
 }
