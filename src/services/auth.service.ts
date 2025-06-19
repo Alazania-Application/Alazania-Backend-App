@@ -55,7 +55,7 @@ class AuthService extends BaseService {
   /**
    * Hashes a new user password
    */
-  private async hashPassword(password: string): Promise<string> {
+  async hashPassword(password: string): Promise<string> {
     return bcrypt.hash(password, bcrypt.genSaltSync(10));
   }
 
@@ -300,20 +300,11 @@ class AuthService extends BaseService {
    * @param {string} param0.password
    * @returns {unknown}
    */
-  createUser = async ({
-    email,
-    password,
-  }: {
+  createUser = async (payload: {
     email: string;
     password: string;
+    id: string;
   }) => {
-    const hashedPassword = await this.hashPassword(password);
-    const payload = {
-      email: email.toLowerCase(),
-      password: hashedPassword,
-      id: uuidv4(),
-    };
-
     const record = await this.writeToDB(
       `
           MERGE (u:${NodeLabels.User} {email: $email})
@@ -335,10 +326,7 @@ class AuthService extends BaseService {
       };
     })[0];
 
-    if (user) {
-      await this.sendEmailVerification(user);
-    }
-
+    await this.sendEmailVerification(user);
     return user;
   };
 
