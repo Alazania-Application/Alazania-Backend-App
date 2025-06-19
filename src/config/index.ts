@@ -17,6 +17,8 @@ export const VERIFICATION_TOKEN_EXPIRY = process.env
 export const MAIL_USERNAME = process.env.MAIL_USERNAME as string;
 export const MAIL_PASSWORD = process.env.MAIL_PASSWORD as string;
 
+export const FUSION_MAIL_TOKEN = process.env.FUSION_MAIL_TOKEN as string;
+
 
 export const MJ_APIKEY_PUBLIC = process.env.MJ_APIKEY_PUBLIC as string;
 export const MJ_APIKEY_PRIVATE = process.env.MJ_APIKEY_PRIVATE as string;

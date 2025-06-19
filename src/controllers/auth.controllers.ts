@@ -5,6 +5,7 @@ import ValidatorMiddleware from "@/middlewares/validator.middleware";
 import { body } from "express-validator";
 import { ErrorResponse, getError, isIdToken } from "@/utils";
 import { IUser } from "@/models";
+import { v4 as uuidv4 } from "uuid";
 import {
   GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET,
@@ -24,17 +25,24 @@ class AuthController {
         .withMessage(
           "Password must contain at least one alphabet character and one special character (@$!%*?&)."
         ),
-      // .matches(
-      //   /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]+$/
-      // )
-      // .withMessage(
-      //   "Password must contain at least one lowercase letter, one uppercase letter, one number, and one special character (@$!%*?&)."
-      // ),
     ]),
     emailService.isValidEmail,
     authService.isEmailValidAndAvailable,
     async (req: Request, res: Response) => {
-      const user = await authService.createUser({ ...req.body });
+      const { email, password } = req.body;
+      if (!email || !password) {
+        throw new ErrorResponse(
+          "Email and password are required",
+          HttpStatusCode.BadRequest
+        );
+      }
+      const hashedPassword = await authService.hashPassword(password);
+      const payload = {
+        email: email.toLowerCase(),
+        password: hashedPassword,
+        id: uuidv4(),
+      };
+      const user = await authService.createUser(payload);
       // NOTE: send email verification link
 
       res.status(HttpStatusCode.Created).json({

@@ -5,9 +5,10 @@ import fs from "fs";
 import { NextFunction, Request, Response } from "express";
 import Mailjet, { LibraryResponse, SendEmailV3_1 } from "node-mailjet";
 import { ErrorResponse } from "@/utils";
-import { HttpStatusCode } from "axios";
+import axios, { HttpStatusCode } from "axios";
 // import { IUser } from "@/dtos/user";
 import {
+  FUSION_MAIL_TOKEN,
   MAIL_PASSWORD,
   MAIL_USERNAME,
   MJ_APIKEY_PRIVATE,
@@ -16,6 +17,25 @@ import {
 import { type Transporter, createTransport } from "nodemailer";
 import type Mail from "nodemailer/lib/mailer";
 import type SMTPTransport from "nodemailer/lib/smtp-transport";
+
+type FusionMailPayload = {
+  message: string;
+  subject: string;
+  reciepeintAddress: string;
+  isHtml?: boolean;
+  cc?: [
+    {
+      name: string;
+      email: string;
+    }
+  ];
+  bcc?: [
+    {
+      name: string;
+      email: string;
+    }
+  ];
+};
 
 class EmailService {
   private mailjet: Mailjet;
@@ -75,6 +95,37 @@ class EmailService {
       Messages,
     });
 
+  sendWithFusion = async (payload: FusionMailPayload) => {
+    console.log(colors.yellow(`Sending mail to ${payload?.reciepeintAddress}`));
+
+    return await axios
+      .post(
+        `https://fusion-comms.fusionintel.io/api/EMails/send-via-mailjet`,
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${FUSION_MAIL_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+        }
+      )
+      .then(() => {
+        console.log(
+          colors.green(
+            `Email sent successfully to ${payload.reciepeintAddress}`
+          )
+        );
+      })
+      .catch((err: any) => {
+        console.error(
+          colors.red(`Error sending email via Fusion Mail: ${err}`)
+        );
+        throw new ErrorResponse(
+          `Failed to send email to ${payload.reciepeintAddress}`,
+          HttpStatusCode.InternalServerError
+        );
+      });
+  };
   sendMail = async (mailOptions: Mail.Options) => {
     console.log(colors.yellow(`Sending mail to ${mailOptions?.to}`));
 
@@ -141,54 +192,59 @@ class EmailService {
     }
     next();
   };
+
   test = async () => {
-    const request = await this.mailjet.post("send", { version: "v3.1" }).request({
-      Messages: [
-        {
-          From: {
-            Email: 'kolade@fusionintel.io',
-            Name: 'Me',
-          },
-          To: [
-            {
-              Email: 'ifechimine@gmail.com',
-              Name: 'You',
+    const request = await this.mailjet
+      .post("send", { version: "v3.1" })
+      .request({
+        Messages: [
+          {
+            From: {
+              Email: "kolade@fusionintel.io",
+              Name: "Me",
             },
-          ],
-          Subject: 'My first Mailjet Email!',
-          TextPart: 'Greetings from Mailjet!',
-          HTMLPart:
-            '<h3>Dear passenger 1, welcome to <a href="https://www.mailjet.com/">Mailjet</a>!</h3><br />May the delivery force be with you!',
-        },
-      ],
-    });
+            To: [
+              {
+                Email: "ifechimine@gmail.com",
+                Name: "You",
+              },
+            ],
+            Subject: "My first Mailjet Email!",
+            TextPart: "Greetings from Mailjet!",
+            HTMLPart:
+              '<h3>Dear passenger 1, welcome to <a href="https://www.mailjet.com/">Mailjet</a>!</h3><br />May the delivery force be with you!',
+          },
+        ],
+      });
     const data: SendEmailV3_1.Body = {
       Messages: [
         {
           From: {
-            Email: 'kolade@fusionintel.io',
-            Name: 'Me',
+            Email: "kolade@fusionintel.io",
+            Name: "Me",
           },
           To: [
             {
-              Email: 'ifechimine@gmail.com',
-              Name: 'You',
+              Email: "ifechimine@gmail.com",
+              Name: "You",
             },
           ],
-          Subject: 'Your email flight plan!',
-          HTMLPart: '<h3>Dear passenger, welcome to Mailjet!</h3><br />May the delivery force be with you!',
-          TextPart: 'Dear passenger, welcome to Mailjet! May the delivery force be with you!',
+          Subject: "Your email flight plan!",
+          HTMLPart:
+            "<h3>Dear passenger, welcome to Mailjet!</h3><br />May the delivery force be with you!",
+          TextPart:
+            "Dear passenger, welcome to Mailjet! May the delivery force be with you!",
         },
       ],
     };
 
     const response: LibraryResponse<SendEmailV3_1.Response> = await this.mailjet
-          .post('send', { version: 'v3.1' })
-          .request(data);
+      .post("send", { version: "v3.1" })
+      .request(data);
 
-  const { Status } = response.body.Messages[0];
+    const { Status } = response.body.Messages[0];
 
-    console.log({Status, res: JSON.stringify(request.body)});
+    console.log({ Status, res: JSON.stringify(request.body) });
   };
 }
 

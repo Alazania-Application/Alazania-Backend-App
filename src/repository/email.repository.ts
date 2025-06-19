@@ -9,21 +9,37 @@ class EmailRepository {
     user: Partial<IUser>;
     OTP: string;
   }) => {
-    const message = `Welcome to Alazania`;
 
+    // let mailOptions = {
+    //   from: `Alazania <ifechimine@gmail.com>`,
+    //   to: `${user.email}`,
+    //   subject: "Verify Your Account",
+    //   text: `Hey ${
+    //     user?.firstName || ""
+    //   },\n\n${message}\n\n Use this OTP to verify your account: ${OTP}\n\nOTP expires in 5 minutes\n\nBest regards,\n\nThe Alazania Team.
+    //   `,
+    //   //   html: generateResetMessage(user?.firstName || "", message, resetUrl),
+    // };
+    // await emailService.sendMail(mailOptions);
     let mailOptions = {
-      from: `Alazania <ifechimine@gmail.com>`,
-      to: `${user.email}`,
+      re: `${user.email}`,
       subject: "Verify Your Account",
       text: `Hey ${
         user?.firstName || ""
-      },\n\n${message}\n\n Use this OTP to verify your account: ${OTP}\n\nOTP expires in 5 minutes\n\nBest regards,\n\nThe Alazania Team.
+      },\n\nWelcome to Alazania\n\n Use this OTP to verify your account: ${OTP}\n\nOTP expires in 5 minutes\n\nBest regards,\n\nThe Alazania Team.
       `,
       //   html: generateResetMessage(user?.firstName || "", message, resetUrl),
     };
 
-    await emailService.sendMail(mailOptions);
+    await emailService.sendWithFusion({
+      message: mailOptions.text,
+      subject: mailOptions.subject,
+      reciepeintAddress: mailOptions.re,
+      isHtml: false,
+    });
+
   };
+
   sendResetPasswordMail = async ({
     user,
     OTP,
@@ -44,7 +60,13 @@ class EmailRepository {
       //   html: generateResetMessage(user?.firstName || "", message, resetUrl),
     };
 
-    await emailService.sendMail(mailOptions);
+    // await emailService.sendMail(mailOptions);
+    await emailService.sendWithFusion({
+      message: mailOptions.text,
+      subject: mailOptions.subject,
+      reciepeintAddress: mailOptions.to,
+      isHtml: false,
+    });
   };
 }
 
