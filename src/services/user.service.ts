@@ -100,6 +100,37 @@ class UserService extends BaseService {
     return this.withDTO(doc);
   };
 
+  getUsers = async (
+    params: IReadQueryParams & Record<string, any> = {}
+  ) => {
+    
+
+    const query = `
+        MATCH (currentUser:${NodeLabels.User} {id: $userId})
+        MATCH (other:${NodeLabels.User})
+        WHERE other.id <> $userId
+        AND other IS NOT NULL
+        AND (other.isDemo IS NULL OR other.isDemo <> true)
+          // AND NOT EXISTS {
+          //   MATCH (currentUser)-[:${RelationshipTypes.FOLLOWS}]->(other)
+          // }
+        RETURN other
+        LIMIT $limit
+      `;
+
+    const result = await this.readFromDB(query, params);
+
+    return result.records.map((v) =>
+      this.withPickDTO(v.get("other").properties, [
+        "firstName",
+        "lastName",
+        "id",
+        "email",
+        "username",
+      ])
+    ) as IUser[];
+  };
+
   getSuggestedUsers = async (
     params: IReadQueryParams & Record<string, any> = {}
   ) => {
@@ -120,9 +151,11 @@ class UserService extends BaseService {
     // `;
 
     const query = `
-        MATCH (currentUser:${NodeLabels.User} {userId: $userId})
+        MATCH (currentUser:${NodeLabels.User} {id: $userId})
         MATCH (other:${NodeLabels.User})
-        WHERE other.userId <> $userId
+        WHERE other.id <> $userId
+        AND other IS NOT NULL
+        AND (other.isDemo IS NULL OR other.isDemo <> true)
           AND NOT EXISTS {
             MATCH (currentUser)-[:${RelationshipTypes.FOLLOWS}]->(other)
           }
@@ -130,16 +163,9 @@ class UserService extends BaseService {
         LIMIT $limit
       `;
 
-    // const query = `
-    //   MATCH (currentUser:${NodeLabels.User} {id: $userId})
-    //   MATCH (other:${NodeLabels.User})
-    //   WHERE other.id <> $userId AND NOT (currentUser)-[:${RelationshipTypes.FOLLOWS}]->(other)
-    //   RETURN other
-    //   LIMIT $limit
-    // `;
 
     const result = await this.readFromDB(query, params);
-    console.log({ result: result.records });
+    
     return result.records.map((v) =>
       this.withPickDTO(v.get("other").properties, [
         "firstName",
