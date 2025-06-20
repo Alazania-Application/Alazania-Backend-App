@@ -122,6 +122,20 @@ class UserController {
     },
   ];
 
+  getUsers = [
+    async (req: Request, res: Response) => {
+      const userId = req?.user?.id;
+
+      const users = await userService.getUsers({ userId });
+
+      res.status(HttpStatusCode.Ok).json({
+        success: true,
+        data: users,
+        message: "Users fetched successfully",
+      });
+    },
+  ];
+  
   getSuggestedUsers = [
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
