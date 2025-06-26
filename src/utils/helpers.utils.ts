@@ -192,3 +192,8 @@ export const isIdToken = (token: string) => {
   // A simple heuristic: ID tokens are JWTs and typically have three segments separated by dots
   return token.split(".").length === 3;
 };
+
+
+export const extractHashtags = (text: string) => {
+  return [...new Set((text.match(/#\w+/g) || []).map(tag => tag.slice(1).toLowerCase()))];
+};

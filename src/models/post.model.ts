@@ -1,7 +1,7 @@
 import { BaseModel } from "./base.model";
 
 export interface Post extends BaseModel {
-  postId: string;
+  id: string;
   content: string;
   createdAt: Date;
   engagement: {
@@ -15,5 +15,4 @@ export interface CreatePostInput {
   userId: string;
   content: string;
   topicId?: string;
-  hashtags?: string[];
 }

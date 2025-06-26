@@ -12,9 +12,16 @@ export enum RelationshipTypes {
   FOLLOWS_HASHTAG = "FOLLOWS_HASHTAG", //User -> hashtags
   INTERESTED_IN = "INTERESTED_IN", //User -> Topic
   FOLLOWS = "FOLLOWS", //User -> User
-  LIKED = "LIKED", //User -> POST
-  COMMENTED_ON = "COMMENTED_ON", // User -> POST
-  POSTED = "POSTED", // User -> POST
   BELONGS_TO = "BELONGS_TO", // Post -> TOPIC
   HAS_HASHTAG = "HAS_HASHTAG", // Post -> HASHTAG
+  ENGAGES_WITH = "ENGAGES_WITH", // User -> POST
+  
+  // POST-RELATIONSHIPS
+  POSTED = "POSTED", // User -> POST
+  LIKED = "LIKED", //User -> POST
+  COMMENTED_ON = "COMMENTED_ON", // User -> POST
+  COMMENTED_BY = "COMMENTED_BY", // User -> COMMENT
+  REPLIED_TO = "REPLIED_TO", // COMMENT -> COMMENT
+  HAS_COMMENT = "HAS_COMMENT", // POST -> COMMENT
+  
 }

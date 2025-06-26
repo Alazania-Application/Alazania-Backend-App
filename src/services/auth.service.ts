@@ -300,11 +300,12 @@ class AuthService extends BaseService {
    * @param {string} param0.password
    * @returns {unknown}
    */
-  createUser = async (payload: {
+  createUser = async (params: {
     email: string;
     password: string;
     id: string;
   }) => {
+
     const record = await this.writeToDB(
       `
           MERGE (u:${NodeLabels.User} {email: $email})
@@ -315,7 +316,8 @@ class AuthService extends BaseService {
             u.createdAt = datetime()
           RETURN u
         `,
-      payload
+
+        params
     );
 
     const user = record.records.map((record) => {
@@ -594,7 +596,6 @@ class AuthService extends BaseService {
 
 /**
  * 
- 
  *
  * @type {AuthService}
  */

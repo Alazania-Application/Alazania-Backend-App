@@ -10,6 +10,8 @@ import { errorHandler } from "./error.middleware";
 import indexRoutes from "../routes";
 import { HttpStatusCode } from "axios";
 import ValidatorMiddleware from "./validator.middleware";
+import swaggerUi from "swagger-ui-express";
+import swaggerDocument from "./../swagger-output.json";
 
 export default (app: Application) => {
   app.use(
@@ -36,7 +38,7 @@ export default (app: Application) => {
   if (env === "production") {
     app.use(helmet());
   }
-  
+
   app.use(ValidatorMiddleware.inputs(ValidatorMiddleware.paginationFilters()));
 
   //Use app routes
@@ -47,6 +49,10 @@ export default (app: Application) => {
       message: "Hello world!",
     });
   });
+
+  app.use("/api/v1/docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
+    explorer: true,
+  }));
 
   //not found
   app.use("**", (_, res) => {
