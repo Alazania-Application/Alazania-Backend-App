@@ -1,144 +1,351 @@
-import { CreatePostInput, Post } from "@/models";
-import { v4 as uuidv4 } from "uuid";
+import { CreatePostInput, IUser, Post } from "@/models";
 import BaseService from "./base.service";
 import { NodeLabels, RelationshipTypes } from "@/enums";
-import { IReadQueryParams } from "@/utils";
+import {
+  extractHashtags,
+  IReadQueryParams,
+  toDTO,
+  toNativeTypes,
+} from "@/utils";
 
 class PostService extends BaseService {
-  async createPost(input: CreatePostInput): Promise<Post> {
-    const postId = uuidv4();
+  async createPost(payload: CreatePostInput): Promise<Post | null> {
+    const hashtags = extractHashtags(payload.content);
+
     const now = new Date();
 
+    const params = {
+      userId: payload.userId,
+      content: payload.content,
+      createdAt: now.toISOString(),
+      topicId: payload?.topicId || null,
+      hashtags,
+    };
+
+    // Create the post
     const result = await this.writeToDB(
       `
-        MATCH (u:User {userId: $userId})
+        MATCH (u:${NodeLabels.User} {id: $userId})
+        OPTIONAL MATCH (t:${NodeLabels.Topic} {id: $topicId})
+        WITH u, t
+
         CREATE (p:${NodeLabels.Post} {
-          postId: $postId,
+          id: randomUUID(),
           content: $content,
           createdAt: datetime($createdAt),
           likes: 0,
           comments: 0,
           shares: 0
         })
-        CREATE (u)-[:${RelationshipTypes.POSTED}]->(p)
+
+        MERGE (u)-[:${RelationshipTypes.POSTED}]->(p)
+        
+        // Optional link to topic
+        FOREACH (_ IN CASE WHEN t IS NOT NULL THEN [1] ELSE [] END |
+          MERGE (p)-[:${RelationshipTypes.BELONGS_TO}]->(t)
+        )
+
+        WITH p
+
+        UNWIND COALESCE($hashtags, []) AS hashtag
+        MERGE (h:${NodeLabels.Hashtag} {name: hashtag})
+        ON CREATE SET 
+              h.popularity = 0,
+              h.lastUsedAt = datetime($createdAt)
+
+        MERGE (p)-[:${RelationshipTypes.HAS_HASHTAG}]->(h)
+        SET 
+          h.popularity = h.popularity + 1,
+          h.lastUsedAt = datetime($createdAt)
+
         RETURN p
       `,
-      {
-        userId: input.userId,
-        postId,
-        content: input.content,
-        createdAt: now.toISOString(),
-      }
+      params
     );
-
-    if (!result.records.length) {
-      throw new Error("Post creation failed. User may not exist.");
-    }
 
     const postNode = result.records[0].get("p");
 
-    if (input.topicId) {
-      await this.writeToDB(
-        `
-          MATCH (p:${NodeLabels.Post} {postId: $postId})
-          MATCH (t:${NodeLabels.Topic} {topicId: $topicId})
-          WHERE t IS NOT NULL 
-          CREATE (p)-[:${RelationshipTypes.BELONGS_TO}]->(t)
-        `,
-        { postId, topicId: input.topicId }
-      );
-    }
-
-    if (input.hashtags && input.hashtags.length > 0) {
-      for (const hashtagName of input.hashtags) {
-        const cleanName = hashtagName.startsWith("#")
-          ? hashtagName.slice(1)
-          : hashtagName;
-        await this.writeToDB(
-          `
-            MATCH (p:${NodeLabels.Post} {postId: $postId})
-            MERGE (h:${NodeLabels.Hashtag} {name: $hashtagName})
-            ON CREATE SET 
-              h.hashtagId = $hashtagId, 
-              h.popularity = 0,
-              h.lastUsedAt = datetime($lastUsedAt)
-            CREATE (p)-[:${RelationshipTypes.HAS_HASHTAG}]->(h)
-            SET 
-              h.popularity = h.popularity + 1,
-              h.lastUsedAt = datetime($lastUsedAt)
-          `,
-          {
-            postId,
-            hashtagName: cleanName,
-            hashtagId: uuidv4(),
-            lastUsedAt: now.toISOString(),
-          }
-        );
-      }
-    }
-
-    return {
-      postId: postNode.properties.postId,
-      content: postNode.properties.content,
-      createdAt: new Date(postNode.properties.createdAt),
+    return toNativeTypes({
+      id: postNode?.properties?.id,
+      content: postNode?.properties?.content,
+      createdAt: postNode?.properties?.createdAt,
       engagement: {
-        likes: postNode.properties.likes,
-        comments: postNode.properties.comments,
-        shares: postNode.properties.shares,
+        likes: postNode?.properties?.likes,
+        comments: postNode?.properties?.comments,
+        shares: postNode?.properties?.shares,
       },
-    };
+    }) as Post;
   }
 
+  // Likes
+  async getPostLikes(postId: string) {
+    const result = await this.readFromDB(
+      `
+        MATCH (p:${NodeLabels.Post} {id: $postId})<-[:${RelationshipTypes.LIKED}]-(u:${NodeLabels.User})
+        return u
+      `,
+      {
+        postId,
+      }
+    );
+
+    return result.records.map((record) =>
+      toDTO(record.get("u").properties, [
+        "firstName",
+        "lastName",
+        "id",
+        "email",
+        "username",
+      ])
+    ) as IUser[];
+  }
+
+  async likePost(userId: string, postId: string) {
+    const result = await this.writeToDB(
+      `
+        MATCH (u:${NodeLabels.User} {id: $userId})
+        MATCH (p:${NodeLabels.Post} {id: $postId})
+
+        MERGE (u)-[r:${RelationshipTypes.LIKED}]->(p)
+        ON CREATE SET r.timestamp = datetime($timestamp), p.likes = coalesce(p.likes, 0) + 1
+
+        with p
+
+        MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(p)
+        OPTIONAL MATCH (p)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
+        OPTIONAL MATCH (p)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
+
+        WITH p, creator, topic, COLLECT(hashtag.name) as hashtags
+
+        RETURN p, creator, topic, hashtags
+      `,
+      {
+        userId,
+        postId,
+        timestamp: new Date().toISOString(),
+      }
+    );
+
+    return result.records.map((record) => {
+      const post = record.get("p");
+      const creator = record.get("creator");
+      const topic = record.get("topic");
+      const hashtags = record.get("hashtags");
+
+      if (post) {
+        return toNativeTypes({
+          id: post?.properties?.id,
+          content: post?.properties?.content,
+          createdAt: post?.properties?.createdAt,
+          engagement: {
+            likes: post?.properties?.likes,
+            comments: post?.properties?.comments,
+            shares: post?.properties?.shares,
+          },
+          creator: {
+            userId: creator?.properties?.id,
+            username: creator?.properties?.username,
+          },
+          topic: topic
+            ? {
+                topicId: topic?.properties?.topicId,
+                name: topic?.properties?.name,
+              }
+            : null,
+          hashtags: hashtags || [],
+        });
+      }
+    })[0];
+  }
+
+  async unlikePost(userId: string, postId: string) {
+    const result = await this.writeToDB(
+      `
+        MATCH (u:${NodeLabels.User} {id: $userId})-[r:${RelationshipTypes.LIKED}]->(p:${NodeLabels.Post} {id: $postId})
+        DELETE r
+        SET p.likes = CASE WHEN p.likes > 0 THEN p.likes - 1 ELSE 0 END
+        with p
+
+        MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(p)
+        OPTIONAL MATCH (p)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
+        OPTIONAL MATCH (p)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
+
+        WITH p, creator, topic, COLLECT(hashtag.name) as hashtags
+
+        RETURN p, creator, topic, hashtags
+      `,
+      {
+        userId,
+        postId,
+      }
+    );
+
+    return result.records.map((record) => {
+      const post = record.get("p");
+      const creator = record.get("creator");
+      const topic = record.get("topic");
+      const hashtags = record.get("hashtags");
+
+      if (post) {
+        return toNativeTypes({
+          id: post?.properties?.id,
+          content: post?.properties?.content,
+          createdAt: post?.properties?.createdAt,
+          engagement: {
+            likes: post?.properties?.likes,
+            comments: post?.properties?.comments,
+            shares: post?.properties?.shares,
+          },
+          creator: {
+            userId: creator?.properties?.id,
+            username: creator?.properties?.username,
+          },
+          topic: topic
+            ? {
+                topicId: topic?.properties?.topicId,
+                name: topic?.properties?.name,
+              }
+            : null,
+          hashtags: hashtags || [],
+        });
+      }
+    })[0];
+  }
+
+  // Comments
   async commentOnPost(userId: string, postId: string, content: string) {
-    const commentId = uuidv4();
     const createdAt = new Date().toISOString();
 
     await this.writeToDB(
       `
-      MATCH (u:User {userId: $userId}), (p:${NodeLabels.Post} {postId: $postId})
-      CREATE (c:Comment {
-        commentId: $commentId,
+      MATCH (u:${NodeLabels.User} {id: $userId})
+      MATCH (p:${NodeLabels.Post} {id: $postId})
+      
+      CREATE (c:${NodeLabels.Comment} {
+        id: randomUUID(),
         content: $content,
-        createdAt: datetime($createdAt)
+        likes: 0,
+        createdAt: datetime($createdAt),
+        updatedAt: datetime($createdAt)
       })
-      CREATE (u)-[:COMMENTED]->(c)
-      CREATE (c)-[:ON]->(p)
-      SET p.comments = p.comments + 1
+      
+      MERGE (c)-[:${RelationshipTypes.COMMENTED_BY}]->(u)
+      MERGE (p)-[:${RelationshipTypes.HAS_COMMENT}]->(c)
+      MERGE (u)-[comment:${RelationshipTypes.COMMENTED_ON}]->(p)
+      ON CREATE SET 
+        comment.timestamp = datetime($createdAt)
+
+
+      SET p.comments = coalesce(p.comments, 0) + 1
       `,
-      { userId, postId, commentId, content, createdAt }
+      { userId, postId, content, createdAt }
     );
 
     return {
-      commentId,
       content,
       createdAt: new Date(createdAt),
     };
   }
 
-  async replyToComment(userId: string, commentId: string, content: string) {
-    const replyId = uuidv4();
+  async replyToComment(
+    userId: string,
+    postId: string,
+    parentCommentId: string,
+    content: string
+  ) {
     const createdAt = new Date().toISOString();
 
+    return await this.writeToDB(
+      `
+        MATCH (u:${NodeLabels.User} {id: $userId})
+        MATCH (p:${NodeLabels.Post} {id: $postId})
+        MATCH (parent:${NodeLabels.Comment} {id: $parentCommentId})
+        
+        CREATE (reply:${NodeLabels.Comment} {
+          id: randomUUID(),
+          content: $content,
+          createdAt: datetime($createdAt),
+          updatedAt: datetime($createdAt)
+        })
+
+        MERGE (u)-[:${RelationshipTypes.COMMENTED_ON}]->(p)
+        MERGE (reply)-[:${RelationshipTypes.COMMENTED_BY}]->(u)
+        MERGE (reply)-[:${RelationshipTypes.REPLIED_TO}]->(parent)
+        MERGE (p)-[:${RelationshipTypes.HAS_COMMENT}]->(reply)
+
+        SET p.comments = coalesce(p.comments, 0) + 1
+        RETURN reply.id AS commentId
+      `,
+      { userId, postId, parentCommentId, content, createdAt }
+    );
+  }
+
+  async likeAComment(userId: string, commentId: string) {
+    return await this.writeToDB(
+      `
+        MATCH (u:${NodeLabels.User} {id: $userId})
+        MATCH (c:${NodeLabels.Comment} {id: $commentId})
+        MERGE (u)-[r:${RelationshipTypes.LIKED}]->(c)
+        ON CREATE SET r.timestamp = datetime($timestamp), c.likes = coalesce(c.likes, 0) + 1
+
+        RETURN c.id AS commentId
+      `,
+      { userId, commentId }
+    );
+  }
+
+  async unlikeAComment(userId: string, commentId: string) {
     await this.writeToDB(
       `
-      MATCH (u:User {userId: $userId}), (c:Comment {commentId: $commentId})
-      CREATE (r:Comment {
-        commentId: $replyId,
-        content: $content,
-        createdAt: datetime($createdAt)
-      })
-      CREATE (u)-[:COMMENTED]->(r)
-      CREATE (r)-[:REPLY_TO]->(c)
+        MATCH (u:${NodeLabels.User} {id: $userId})-[r:${RelationshipTypes.LIKED}]->(c:${NodeLabels.Comment} {id: $commentId})
+        DELETE r
+        SET c.likes = CASE WHEN c.likes > 0 THEN c.likes - 1 ELSE 0 END
       `,
-      { userId, commentId, replyId, content, createdAt }
+      {
+        userId,
+        commentId,
+      }
+    );
+  }
+
+  async deleteComment(userId: string, commentId: string) {
+    return await this.writeToDB(
+      `
+      MATCH (u:${NodeLabels.User} {id: $userId})<-[:${RelationshipTypes.COMMENTED_BY}]-(c:${NodeLabels.Comment} {id: $commentId})
+      MATCH (p:${NodeLabels.Post})-[:${RelationshipTypes.HAS_COMMENT}]->(c)
+      SET c.content = '[deleted]', c.deleted = true, p.comments = CASE WHEN p.comments > 0 THEN p.comments - 1 ELSE 0 END
+      `,
+      { userId, commentId }
+    );
+  }
+
+  async getPostComments(postId: string) {
+    const results = await this.readFromDB(
+      `
+        MATCH (p:${NodeLabels.Post} {id: $postId})-[:${RelationshipTypes.HAS_COMMENT}]->(c:${NodeLabels.Comment})
+        OPTIONAL MATCH (c)-[:${RelationshipTypes.COMMENTED_BY}]->(u: ${NodeLabels.User})
+        RETURN c, u
+        ORDER BY c.createdAt ASC
+      `,
+      {
+        postId,
+      }
     );
 
-    return {
-      commentId: replyId,
-      content,
-      createdAt: new Date(createdAt),
-    };
+    return results.records.map((record) => ({
+      comment: toNativeTypes(record.get("c").properties),
+      author: toNativeTypes(
+        toDTO(record.get("u")?.properties ?? null, [
+          "firstName",
+          "lastName",
+          "avatar",
+          "username",
+        ])
+      ),
+    }));
   }
+
+  // Get posts
 
   async getFollowingFeed(
     userId: string,
@@ -146,18 +353,19 @@ class PostService extends BaseService {
   ): Promise<any[]> {
     const result = await this.readFromDB(
       `
-        MATCH (u:${NodeLabels.User} {userId: $userId})
+        MATCH (u:${NodeLabels.User} {id: $userId})-[:${RelationshipTypes.POSTED}]->(myPost:${NodeLabels.Post})
         OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS}]->(followedUser:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(followedPost:${NodeLabels.Post})
         OPTIONAL MATCH (u)-[:${RelationshipTypes.INTERESTED_IN}]->(topic:${NodeLabels.Topic})<-[:${RelationshipTypes.BELONGS_TO}]-(topicPost:${NodeLabels.Post})
         OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS}]->(hashtag:${NodeLabels.Hashtag})<-[:${RelationshipTypes.HAS_HASHTAG}]-(hashtagPost:${NodeLabels.Post})
         
         WITH u, 
+             COLLECT(DISTINCT myPost) as myPosts,
              COLLECT(DISTINCT followedPost) as followedPosts,
              COLLECT(DISTINCT topicPost) as topicPosts,
              COLLECT(DISTINCT hashtagPost) as hashtagPosts
         
-        UNWIND (followedPosts + topicPosts + hashtagPosts) as post
-        WITH u, post, followedPosts, topicPosts, hashtagPosts
+        UNWIND (followedPosts + topicPosts + hashtagPosts + myPosts) as post
+        WITH u, post, followedPosts, topicPosts, hashtagPosts, myPosts
         WHERE post IS NOT NULL
         
         MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(post)
@@ -186,27 +394,29 @@ class PostService extends BaseService {
       const topic = record.get("topic");
       const hashtags = record.get("hashtags");
 
-      return {
-        postId: post.properties.postId,
-        content: post.properties.content,
-        createdAt: new Date(post.properties.createdAt),
-        engagement: {
-          likes: post.properties.likes,
-          comments: post.properties.comments,
-          shares: post.properties.shares,
-        },
-        creator: {
-          userId: creator.properties.userId,
-          username: creator.properties.username,
-        },
-        topic: topic
-          ? {
-              topicId: topic.properties.topicId,
-              name: topic.properties.name,
-            }
-          : null,
-        hashtags: hashtags || [],
-      };
+      if (post) {
+        return toNativeTypes({
+          id: post?.properties?.id,
+          content: post?.properties?.content,
+          createdAt: post?.properties?.createdAt,
+          engagement: {
+            likes: post?.properties?.likes,
+            comments: post?.properties?.comments,
+            shares: post?.properties?.shares,
+          },
+          creator: {
+            userId: creator?.properties?.id,
+            username: creator?.properties?.username,
+          },
+          topic: topic
+            ? {
+                topicId: topic?.properties?.topicId,
+                name: topic?.properties?.name,
+              }
+            : null,
+          hashtags: hashtags || [],
+        });
+      }
     });
   }
 
@@ -216,7 +426,7 @@ class PostService extends BaseService {
   ): Promise<any[]> {
     const result = await this.readFromDB(
       `
-        MATCH (u:${NodeLabels.User} {userId: $userId})
+        MATCH (u:${NodeLabels.User} {id: $userId})
 
         OPTIONAL MATCH (u)-[interest:${RelationshipTypes.INTERESTED_IN}]->(topic:${NodeLabels.Topic})<-[:${RelationshipTypes.BELONGS_TO}]-(topicPost:${NodeLabels.Post})
         OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS}]->(hashtag:${NodeLabels.Hashtag})<-[:${RelationshipTypes.HAS_HASHTAG}]-(hashtagPost:${NodeLabels.Post})
@@ -258,54 +468,38 @@ class PostService extends BaseService {
       const topic = record.get("topic");
       const hashtags = record.get("hashtags");
 
-      return {
-        postId: post.properties.postId,
-        content: post.properties.content,
-        createdAt: new Date(post.properties.createdAt),
-        engagement: {
-          likes: post.properties.likes,
-          comments: post.properties.comments,
-          shares: post.properties.shares,
-        },
-        creator: {
-          userId: creator.properties.userId,
-          username: creator.properties.username,
-        },
-        topic: topic
-          ? {
-              topicId: topic.properties.topicId,
-              name: topic.properties.name,
-            }
-          : null,
-        hashtags: hashtags || [],
-      };
-    });
-  }
-
-  async likePost(userId: string, postId: string): Promise<void> {
-    await this.writeToDB(
-      `
-        MATCH (u:User {userId: $userId})
-        MATCH (p:${NodeLabels.Post} {postId: $postId})
-        MERGE (u)-[r:ENGAGES_WITH]->(p)
-        SET r.engagementType = 'like',
-            r.timestamp = datetime($timestamp)
-        SET p.likes = p.likes + 1
-      `,
-      {
-        userId,
-        postId,
-        timestamp: new Date().toISOString(),
+      if (post) {
+        return toNativeTypes({
+          id: post?.properties?.id,
+          content: post?.properties?.content,
+          createdAt: post?.properties?.createdAt,
+          engagement: {
+            likes: post?.properties?.likes,
+            comments: post?.properties?.comments,
+            shares: post?.properties?.shares,
+          },
+          creator: {
+            userId: creator?.properties?.id,
+            username: creator?.properties?.username,
+          },
+          topic: topic
+            ? {
+                topicId: topic?.properties?.topicId,
+                name: topic?.properties?.name,
+              }
+            : null,
+          hashtags: hashtags || [],
+        });
       }
-    );
+    });
   }
 
   async sharePost(userId: string, postId: string): Promise<void> {
     await this.writeToDB(
       `
-        MATCH (u:User {userId: $userId})
+        MATCH (u:${NodeLabels.User} {id: $userId})
         MATCH (p:${NodeLabels.Post} {postId: $postId})
-        CREATE (u)-[r:ENGAGES_WITH]->(p)
+        CREATE (u)-[r:${RelationshipTypes.ENGAGES_WITH}]->(p)
         SET r.engagementType = 'share',
             r.timestamp = datetime($timestamp)
         SET p.shares = p.shares + 1
@@ -332,7 +526,7 @@ class PostService extends BaseService {
 
     await this.writeToDB(
       `
-      MATCH (u:User {id: $userId})-[r:INTERESTED_IN]->(t:${NodeLabels.Topic} {slug: $topicSlug})
+      MATCH (u:${NodeLabels.User} {id: $userId})-[r:${RelationshipTypes.INTERESTED_IN}]->(t:${NodeLabels.Topic} {slug: $topicSlug})
       SET r.interestLevel = CASE 
         WHEN r.interestLevel + $boost > 10 THEN 10 
         ELSE r.interestLevel + $boost 

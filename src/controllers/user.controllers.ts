@@ -135,7 +135,7 @@ class UserController {
       });
     },
   ];
-
+  
   getSuggestedUsers = [
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
