@@ -16,11 +16,7 @@ userRouter.get(
   userController.getSuggestedUsers
 );
 
-userRouter.get(
-  "/",
-  authMiddleWare.protectRoute,
-  userController.getUsers
-);
+userRouter.get("/", authMiddleWare.protectRoute, userController.getUsers);
 
 userRouter.put(
   "/onboard/update",

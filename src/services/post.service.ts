@@ -9,7 +9,6 @@ class PostService extends BaseService {
     const postId = uuidv4();
     const now = new Date();
 
-    // Create the post
     const result = await this.writeToDB(
       `
         MATCH (u:User {userId: $userId})
@@ -32,7 +31,12 @@ class PostService extends BaseService {
       }
     );
 
-    // Link to topic if provided
+    if (!result.records.length) {
+      throw new Error("Post creation failed. User may not exist.");
+    }
+
+    const postNode = result.records[0].get("p");
+
     if (input.topicId) {
       await this.writeToDB(
         `
@@ -45,7 +49,6 @@ class PostService extends BaseService {
       );
     }
 
-    // Link to hashtags if provided
     if (input.hashtags && input.hashtags.length > 0) {
       for (const hashtagName of input.hashtags) {
         const cleanName = hashtagName.startsWith("#")
@@ -61,20 +64,19 @@ class PostService extends BaseService {
               h.lastUsedAt = datetime($lastUsedAt)
             CREATE (p)-[:${RelationshipTypes.HAS_HASHTAG}]->(h)
             SET 
-              h.popularity = h.popularity + 1
+              h.popularity = h.popularity + 1,
               h.lastUsedAt = datetime($lastUsedAt)
           `,
           {
             postId,
             hashtagName: cleanName,
             hashtagId: uuidv4(),
-            lastUsedAt: now.toISOString()
+            lastUsedAt: now.toISOString(),
           }
         );
       }
     }
 
-    const postNode = result.records[0].get("p");
     return {
       postId: postNode.properties.postId,
       content: postNode.properties.content,
@@ -84,6 +86,57 @@ class PostService extends BaseService {
         comments: postNode.properties.comments,
         shares: postNode.properties.shares,
       },
+    };
+  }
+
+  async commentOnPost(userId: string, postId: string, content: string) {
+    const commentId = uuidv4();
+    const createdAt = new Date().toISOString();
+
+    await this.writeToDB(
+      `
+      MATCH (u:User {userId: $userId}), (p:${NodeLabels.Post} {postId: $postId})
+      CREATE (c:Comment {
+        commentId: $commentId,
+        content: $content,
+        createdAt: datetime($createdAt)
+      })
+      CREATE (u)-[:COMMENTED]->(c)
+      CREATE (c)-[:ON]->(p)
+      SET p.comments = p.comments + 1
+      `,
+      { userId, postId, commentId, content, createdAt }
+    );
+
+    return {
+      commentId,
+      content,
+      createdAt: new Date(createdAt),
+    };
+  }
+
+  async replyToComment(userId: string, commentId: string, content: string) {
+    const replyId = uuidv4();
+    const createdAt = new Date().toISOString();
+
+    await this.writeToDB(
+      `
+      MATCH (u:User {userId: $userId}), (c:Comment {commentId: $commentId})
+      CREATE (r:Comment {
+        commentId: $replyId,
+        content: $content,
+        createdAt: datetime($createdAt)
+      })
+      CREATE (u)-[:COMMENTED]->(r)
+      CREATE (r)-[:REPLY_TO]->(c)
+      `,
+      { userId, commentId, replyId, content, createdAt }
+    );
+
+    return {
+      commentId: replyId,
+      content,
+      createdAt: new Date(createdAt),
     };
   }
 
