@@ -15,6 +15,7 @@ import { URLSearchParams } from "url";
 
 class AuthController {
   registerUser = [
+    /* #swagger.tags = ['Auth'] */
     ValidatorMiddleware.inputs([
       body("email", "Please provide a valid email").exists().isEmail(),
       body("password", "Password is required")

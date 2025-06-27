@@ -2,7 +2,6 @@ import neo4j, {
   ManagedTransaction,
   QueryResult,
   RecordShape,
-  Transaction,
   type Driver,
   type Session,
 } from "neo4j-driver";
@@ -98,24 +97,25 @@ export default class BaseService {
     // Create constraints
     const constraints = [
       // === User Constraints ===
-      ["user_email", "FOR (user:User) REQUIRE user.email IS UNIQUE"],
-      ["user_phone", "FOR (user:User) REQUIRE user.phone IS UNIQUE"],
-      ["user_username", "FOR (u:User) REQUIRE u.username IS UNIQUE"],
-      ["user_id", "FOR (u:User) REQUIRE u.id IS UNIQUE"],
+      ["user_email", `FOR (user:${NodeLabels.User}) REQUIRE user.email IS UNIQUE`],
+      ["user_phone", `FOR (user:${NodeLabels.User}) REQUIRE user.phone IS UNIQUE`],
+      ["user_username", `FOR (user:${NodeLabels.User}) REQUIRE user.username IS UNIQUE`],
+      ["user_id", `FOR (user:${NodeLabels.User}) REQUIRE user.id IS UNIQUE`],
 
       // === Post & Message Constraints ===
-      ["post_id", "FOR (post:Post) REQUIRE post.id IS UNIQUE"],
-      ["message_id", "FOR (m:Message) REQUIRE m.id IS UNIQUE"],
+      ["post_id", `FOR (post:${NodeLabels.Post}) REQUIRE post.id IS UNIQUE`],
+      ["comment_id", `FOR (comment:${NodeLabels.Comment}) REQUIRE comment.id IS UNIQUE`],
 
       // === Topic Constraint ===
-      ["topic_name", "FOR (topic:Topic) REQUIRE topic.slug IS UNIQUE"],
+      ["topic_name", `FOR (topic:${NodeLabels.Topic}) REQUIRE topic.slug IS UNIQUE`],
     ];
 
     const indexes = [
-      ["user_id_index", "FOR (u:User) ON (u.id)"],
-      ["user_id_index", "FOR (u:User) ON (u.id)"],
-      ["post_createdAt_index", "FOR (p:Post) ON (p.createdAt)"],
-      ["hashtag_slug_index", "FOR (h:Hashtag) ON (h.slug)"],
+      ["user_id_index", `FOR (u:${NodeLabels.User}) ON (u.id)`],
+      ["post_createdAt_index", `FOR (p:${NodeLabels.Post}) ON (p.createdAt)`],
+      ["post_id_index", `FOR (p:${NodeLabels.Post}) ON (p.id)`],
+      ["comment_id_index", `FOR (c:${NodeLabels.Comment}) ON (c.id)`],
+      ["hashtag_slug_index", `FOR (h:${NodeLabels.Hashtag}) ON (h.slug)`],
     ];
 
    

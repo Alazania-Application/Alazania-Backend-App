@@ -5,15 +5,50 @@ import { postController } from "@/controllers";
 export const postRouter = Router();
 
 postRouter.get(
-  "/following",
+  "/",
   authMiddleWare.protectRoute,
-  postController.following
+  postController.getPosts
+);
+postRouter.get(
+  "/:postId/likes",
+  authMiddleWare.protectRoute,
+  postController.getPostLikes
+);
+postRouter.get(
+  "/:postId/comments",
+  authMiddleWare.protectRoute,
+  postController.getPostComments
 );
 
-postRouter.get(
-  "/spotlight",
+postRouter.post("/", authMiddleWare.protectRoute, postController.createPost);
+
+postRouter.post(
+  "/:postId/like",
   authMiddleWare.protectRoute,
-  postController.spotlight
+  postController.likeAPost
+);
+postRouter.post(
+  "/:postId/unlike",
+  authMiddleWare.protectRoute,
+  postController.unlikeAPost
+);
+
+postRouter.post(
+  "/:postId/share",
+  authMiddleWare.protectRoute,
+  postController.sharePost
+);
+
+postRouter.post(
+  "/:postId/comment",
+  authMiddleWare.protectRoute,
+  postController.commentOnPost
+);
+
+postRouter.post(
+  "/comment/:commentId/reply",
+  authMiddleWare.protectRoute,
+  postController.replyToComment
 );
 
 
