@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { authMiddleWare } from "@/middlewares/authenticator.middleware";
 import { postController } from "@/controllers";
+import { multerConfig } from "@/middlewares/multer.middleware";
 
 export const postRouter = Router();
 
@@ -20,7 +21,7 @@ postRouter.get(
   postController.getPostComments
 );
 
-postRouter.post("/", authMiddleWare.protectRoute, postController.createPost);
+postRouter.post("/", authMiddleWare.protectRoute, multerConfig.array("images"), postController.createPost);
 
 postRouter.post(
   "/:postId/like",

@@ -12,7 +12,9 @@ export interface Post extends BaseModel {
 }
 
 export interface CreatePostInput {
+  postId: string;
   userId: string;
   content: string;
   topicId?: string;
+  images?: string[]
 }

@@ -15,8 +15,10 @@ class PostService extends BaseService {
     const now = new Date();
 
     const params = {
+      postId: payload.postId,
       userId: payload.userId,
       content: payload.content,
+      images: payload?.images ?? [],
       createdAt: now.toISOString(),
       topicId: payload?.topicId || null,
       hashtags,
@@ -30,8 +32,9 @@ class PostService extends BaseService {
         WITH u, t
 
         CREATE (p:${NodeLabels.Post} {
-          id: randomUUID(),
+          id: $postId,
           content: $content,
+          images: $images,
           createdAt: datetime($createdAt),
           likes: 0,
           comments: 0,
@@ -69,6 +72,7 @@ class PostService extends BaseService {
       id: postNode?.properties?.id,
       content: postNode?.properties?.content,
       createdAt: postNode?.properties?.createdAt,
+      images: postNode?.properties?.images ?? [],
       engagement: {
         likes: postNode?.properties?.likes,
         comments: postNode?.properties?.comments,
@@ -235,7 +239,6 @@ class PostService extends BaseService {
       ON CREATE SET 
         comment.timestamp = datetime($createdAt)
 
-
       SET p.comments = coalesce(p.comments, 0) + 1
       `,
       { userId, postId, content, createdAt }
@@ -346,7 +349,6 @@ class PostService extends BaseService {
   }
 
   // Get posts
-
   async getFollowingFeed(
     userId: string,
     params: IReadQueryParams = {}
@@ -357,7 +359,7 @@ class PostService extends BaseService {
         OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS}]->(followedUser:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(followedPost:${NodeLabels.Post})
         OPTIONAL MATCH (u)-[:${RelationshipTypes.INTERESTED_IN}]->(topic:${NodeLabels.Topic})<-[:${RelationshipTypes.BELONGS_TO}]-(topicPost:${NodeLabels.Post})
         OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS}]->(hashtag:${NodeLabels.Hashtag})<-[:${RelationshipTypes.HAS_HASHTAG}]-(hashtagPost:${NodeLabels.Post})
-        
+
         WITH u, 
              COLLECT(DISTINCT myPost) as myPosts,
              COLLECT(DISTINCT followedPost) as followedPosts,
@@ -371,8 +373,9 @@ class PostService extends BaseService {
         MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(post)
         OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
         OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
+        OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
         
-        WITH post, creator, topic, COLLECT(hashtag.name) as hashtags,
+        WITH post, creator, topic, liked, COLLECT(hashtag.name) as hashtags,
              CASE 
                WHEN post IN followedPosts THEN 3
                WHEN post IN topicPosts THEN 2
@@ -380,7 +383,7 @@ class PostService extends BaseService {
                ELSE 0
              END as relevanceScore
         
-        RETURN post, creator, topic, hashtags, relevanceScore
+        RETURN post, creator, topic, liked, hashtags, relevanceScore
         ORDER BY relevanceScore DESC , post.createdAt DESC
         SKIP $skip
         LIMIT $limit
@@ -393,6 +396,7 @@ class PostService extends BaseService {
       const creator = record.get("creator");
       const topic = record.get("topic");
       const hashtags = record.get("hashtags");
+      const isLiked = record.get("liked");
 
       if (post) {
         return toNativeTypes({
@@ -415,6 +419,7 @@ class PostService extends BaseService {
               }
             : null,
           hashtags: hashtags || [],
+          isLiked: Boolean(isLiked)
         });
       }
     });
@@ -451,10 +456,11 @@ class PostService extends BaseService {
         OPTIONAL MATCH (post)<-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User})
         OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
         OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
+        OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
 
-        WITH post, creator, topic, COLLECT(DISTINCT hashtag.name) AS hashtags, relevanceScore
+        WITH post, creator, topic, liked, COLLECT(DISTINCT hashtag.name) AS hashtags, relevanceScore
 
-        RETURN post, creator, topic, hashtags, relevanceScore
+        RETURN post, creator, topic, liked, hashtags, relevanceScore
         ORDER BY relevanceScore DESC, post.createdAt DESC
         SKIP $skip
         LIMIT $limit
@@ -467,6 +473,7 @@ class PostService extends BaseService {
       const creator = record.get("creator");
       const topic = record.get("topic");
       const hashtags = record.get("hashtags");
+      const isLiked = record.get("liked");
 
       if (post) {
         return toNativeTypes({
@@ -489,6 +496,7 @@ class PostService extends BaseService {
               }
             : null,
           hashtags: hashtags || [],
+          isLiked: Boolean(isLiked)
         });
       }
     });

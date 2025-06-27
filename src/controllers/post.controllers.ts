@@ -1,12 +1,39 @@
+import { uploadFile } from "@/middlewares/multer.middleware";
 import ValidatorMiddleware from "@/middlewares/validator.middleware";
 import { postService } from "@/services";
 import { HttpStatusCode } from "axios";
 import { Request, Response } from "express";
 import { body, param, query } from "express-validator";
+import sharp from "sharp";
+import { v4 as uuidv4 } from "uuid";
 
 class PostController {
   createPost = async (req: Request, res: Response) => {
     const userId = req?.user?.id;
+    const postId = uuidv4();
+    req.body.postId = postId;
+
+    const images = req.files as Express.Multer.File[];
+
+    if (images?.length) {
+      const compressedImages = await Promise.all(
+        images.map((file) =>
+          sharp(file.buffer)
+            .resize({ width: 1080 })
+            .webp({ quality: 80 })
+            .toBuffer()
+        )
+      );
+
+      const uploadUrls = await Promise.all(
+        compressedImages.map((compressed) => {
+          const filename = `${userId}/posts/${postId}/${uuidv4()}.webp`;
+          return uploadFile(compressed, filename);
+        })
+      );
+
+      req.body.images = [...uploadUrls];
+    }
 
     const payload = {
       ...req.body,
