@@ -23,6 +23,8 @@ services:
             - node_modules/
         - action: rebuild
           path: yarn.lock
+        - action: rebuild
+          path: ./src/config/.env
 
   neo4j:
     image: neo4j:latest

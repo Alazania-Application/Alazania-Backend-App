@@ -11,7 +11,7 @@
     "format": "prettier --write \"src/**/*.ts\" ",
     "dev": "concurrently \"tsc -w\" \"nodemon\"",
     "swagger": "ts-node src/swagger.ts",
-    "docker": "docker compose watch",
+    "docker": "docker-compose --env-file ./src/config/.env up",
     "docker:build": "docker-compose down \ndocker-compose --env-file ./src/config/.env up --build"
   },
   "nodemonConfig": {
