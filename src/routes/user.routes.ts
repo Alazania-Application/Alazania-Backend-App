@@ -29,10 +29,35 @@ userRouter.put(
   userController.handleAvatarUpload,
   userController.onboardUpdate
 );
+
 userRouter.put(
   "/update",
   authMiddleWare.protectRoute,
   multerConfig.single("avatar"),
   userController.handleAvatarUpload,
   userController.update
+);
+
+userRouter.patch(
+  "/follow/:userId",
+  authMiddleWare.protectRoute,
+  userController.followUser
+);
+
+userRouter.patch(
+  "/unfollow/:userId",
+  authMiddleWare.protectRoute,
+  userController.unfollowUser
+);
+
+userRouter.get(
+  "/followers/:userId",
+  authMiddleWare.protectRoute,
+  userController.getUserFollowers
+);
+
+userRouter.get(
+  "/following/:userId",
+  authMiddleWare.protectRoute,
+  userController.getUserFollowing
 );

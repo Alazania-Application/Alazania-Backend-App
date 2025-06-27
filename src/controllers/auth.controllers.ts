@@ -5,7 +5,6 @@ import ValidatorMiddleware from "@/middlewares/validator.middleware";
 import { body } from "express-validator";
 import { ErrorResponse, getError, isIdToken } from "@/utils";
 import { IUser } from "@/models";
-import { v4 as uuidv4 } from "uuid";
 import {
   GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET,
@@ -41,7 +40,6 @@ class AuthController {
       const payload = {
         email: email.toLowerCase(),
         password: hashedPassword,
-        id: uuidv4(),
       };
       const user = await authService.createUser(payload);
       // NOTE: send email verification link
@@ -153,6 +151,9 @@ class AuthController {
 
       if (!user) {
         throw new ErrorResponse("User not found", HttpStatusCode.BadRequest);
+      }
+      if (user?.isEmailVerified) {
+        throw new ErrorResponse("Account already verified", HttpStatusCode.BadRequest);
       }
 
       await authService.verifyUserEmail(user.email, { otp: req.body.otp });

@@ -1,17 +1,15 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import BaseService from "./base.service";
-import { v4 as uuidv4 } from "uuid";
 import { CookieOptions, NextFunction, Request, Response } from "express";
 import { IUser } from "@/models";
 import {
   ErrorResponse,
-  isIdToken,
   omitDTO,
   toDTO,
   verifyJwtToken,
 } from "@/utils";
-import axios, { HttpStatusCode } from "axios";
+import { HttpStatusCode } from "axios";
 import {
   env,
   GOOGLE_CLIENT_ID,
@@ -303,7 +301,6 @@ class AuthService extends BaseService {
   createUser = async (params: {
     email: string;
     password: string;
-    id: string;
   }) => {
 
     const record = await this.writeToDB(
@@ -311,9 +308,12 @@ class AuthService extends BaseService {
           MERGE (u:${NodeLabels.User} {email: $email})
           ON CREATE SET 
             u.password = $password,
-            u.id = $id,
+            u.id = randomuuid(),
             u.isEmailVerified = false,
+            u.username = $email
             u.createdAt = datetime()
+            u.following = 0
+            u.followers = 0
           RETURN u
         `,
 
@@ -361,7 +361,7 @@ class AuthService extends BaseService {
       `
         MERGE (u:${NodeLabels.User} {email: $email})
         ON CREATE SET 
-          u.id = $id,
+          u.id = randomuuid(),
           u += $updates
 
         ON MATCH SET  
@@ -370,7 +370,7 @@ class AuthService extends BaseService {
 
         RETURN u
       `,
-      { email: payload?.email, updates, id: uuidv4() }
+      { email: payload?.email, updates }
     );
 
     const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
