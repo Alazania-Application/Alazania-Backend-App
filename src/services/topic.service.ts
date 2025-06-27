@@ -43,11 +43,12 @@ class TopicService extends BaseService {
   };
 
   getAllTopics = async (params?: IReadQueryParams): Promise<Topic[]> => {
+    
     const result = await this.readFromDB(
       `
         MATCH (t:${NodeLabels.Topic})
         RETURN t
-        ORDER BY t.popularity ${params?.sort}
+        ORDER BY t.popularity DESC
         SKIP $skip
         LIMIT $limit
       `,
