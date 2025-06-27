@@ -17,6 +17,9 @@ export interface IUser extends BaseModel {
   isEmailVerified?: boolean;
   isPhoneVerified?: boolean;
 
+  isFollowingBack?: boolean;
+  isFollowing?: boolean;
+
   lastLogin?: Date | string;
 }
 

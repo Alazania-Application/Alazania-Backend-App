@@ -4,7 +4,7 @@ import ValidatorMiddleware from "@/middlewares/validator.middleware";
 import { hashtagService, topicService, userService } from "@/services";
 import { HttpStatusCode } from "axios";
 import { NextFunction, Request, Response } from "express";
-import { body } from "express-validator";
+import { body, param } from "express-validator";
 import slugify from "slugify";
 
 class UserController {
@@ -135,7 +135,7 @@ class UserController {
       });
     },
   ];
-  
+
   getSuggestedUsers = [
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
@@ -146,6 +146,74 @@ class UserController {
         success: true,
         data: users,
         message: "Users fetched successfully",
+      });
+    },
+  ];
+
+  followUser = [
+    ValidatorMiddleware.inputs([
+      param("userId", "User id is required").exists().isUUID(),
+    ]),
+    async (req: Request, res: Response) => {
+      const userId = req?.user?.id;
+
+      const data = await userService.followUser(userId, req.params.userId);
+
+      res.status(HttpStatusCode.Ok).json({
+        success: true,
+        data,
+        message: "User followed successfully",
+      });
+    },
+  ];
+
+  unfollowUser = [
+    ValidatorMiddleware.inputs([
+      param("userId", "User id is required").exists().isUUID(),
+    ]),
+    async (req: Request, res: Response) => {
+      const userId = req?.user?.id;
+
+      const data = await userService.unfollowUser(userId, req.params.userId);
+
+      res.status(HttpStatusCode.Ok).json({
+        success: true,
+        data,
+        message: "User unfollowed successfully",
+      });
+    },
+  ];
+
+  getUserFollowers = [
+    ValidatorMiddleware.inputs([
+      param("userId", "User id is required").exists().isUUID(),
+    ]),
+    async (req: Request, res: Response) => {
+      const userId = req?.user?.id;
+
+      const data = await userService.getUserFollowers(userId, req.params.userId);
+
+      res.status(HttpStatusCode.Ok).json({
+        success: true,
+        data,
+        message: "User follower(s) fetched successfully",
+      });
+    },
+  ];
+
+  getUserFollowing = [
+    ValidatorMiddleware.inputs([
+      param("userId", "User id is required").exists().isUUID(),
+    ]),
+    async (req: Request, res: Response) => {
+      const userId = req?.user?.id;
+
+      const data = await userService.getUserFollowing(userId, req.params.userId);
+
+      res.status(HttpStatusCode.Ok).json({
+        success: true,
+        data,
+        message: "User following(s) fetched successfully",
       });
     },
   ];
