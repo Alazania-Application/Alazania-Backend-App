@@ -403,6 +403,7 @@ class PostService extends BaseService {
           id: post?.properties?.id,
           content: post?.properties?.content,
           createdAt: post?.properties?.createdAt,
+          images: post?.properties?.images || [],
           engagement: {
             likes: post?.properties?.likes,
             comments: post?.properties?.comments,
@@ -480,6 +481,7 @@ class PostService extends BaseService {
           id: post?.properties?.id,
           content: post?.properties?.content,
           createdAt: post?.properties?.createdAt,
+          images: post?.properties?.images || [],
           engagement: {
             likes: post?.properties?.likes,
             comments: post?.properties?.comments,
