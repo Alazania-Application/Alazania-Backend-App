@@ -8,6 +8,7 @@ import slugify from "slugify";
 class InterestController {
   getAllTopics = [
     async (req: Request, res: Response) => {
+      
       const topics = await topicService.getAllTopics(req.query);
 
       res.status(HttpStatusCode.Ok).json({

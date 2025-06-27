@@ -23,6 +23,8 @@ services:
             - node_modules/
         - action: rebuild
           path: yarn.lock
+        - action: rebuild
+          path: ./src/config/.env
 
   neo4j:
     image: neo4j:latest
@@ -33,7 +35,7 @@ services:
     environment:
       - NEO4J_AUTH=${DB_USERNAME}/${DB_PASSWORD}
     volumes:
-      - neo4j_data:/data
+      - db:/data/alazania-db
 
 volumes:
-  neo4j_data:
+  db:
