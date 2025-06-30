@@ -42,7 +42,7 @@ class AuthController {
         password: hashedPassword,
       };
       const user = await authService.createUser(payload);
-      // NOTE: send email verification link
+    
 
       res.status(HttpStatusCode.Created).json({
         success: true,
