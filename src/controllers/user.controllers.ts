@@ -1,5 +1,5 @@
 import { UserResponseDto } from "@/models";
-import { uploadFile } from "@/middlewares/multer.middleware";
+import { uploadFile } from "@/middlewares/upload.middleware";
 import ValidatorMiddleware from "@/middlewares/validator.middleware";
 import { hashtagService, topicService, userService } from "@/services";
 import { HttpStatusCode } from "axios";
