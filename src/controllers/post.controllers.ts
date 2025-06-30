@@ -1,9 +1,12 @@
-import { uploadFile } from "@/middlewares/multer.middleware";
+import { SPACES_BUCKET } from "@/config";
+import { deleteFolderByPrefix, s3Config, uploadFile } from "@/middlewares/upload.middleware";
 import ValidatorMiddleware from "@/middlewares/validator.middleware";
 import { postService } from "@/services";
+import { CopyObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { HttpStatusCode } from "axios";
 import { Request, Response } from "express";
 import { body, param, query } from "express-validator";
+import path from "path";
 import sharp from "sharp";
 import { v4 as uuidv4 } from "uuid";
 
@@ -48,6 +51,88 @@ class PostController {
       message: "Post created successfully",
     });
   };
+
+  publishPost = [
+    ValidatorMiddleware.inputs([
+      body("fileKeys", "fileKeys array is required").exists().isArray(),
+      body("fileKeys.*", "fileKey is supposed to be a string")
+        .exists()
+        .isString(),
+      body("postId", "postId is required")
+        .exists()
+        .isUUID(),
+      body("sessionId", "sessionId is required")
+        .exists()
+        .isUUID(),
+      body("content", "content is required")
+        .exists()
+        .isUUID(),
+
+    ]),
+    async (req: Request, res: Response) => {
+      const userId = req.user?.id;
+      const { postId, sessionId, fileKeys } = req.body;
+
+      const modifiedPostId = `${userId}-${postId}`
+      const modifiedSessionId = `${userId}-${sessionId}`;
+      const sessionPrefix = `${userId}/temp-uploads/${modifiedSessionId}/`;
+
+      const successfulMoves: string[] = [];
+
+
+      for (const tempKey of fileKeys) {
+        // Security check: Ensure the key starts with the temporary prefix
+        if (!tempKey.startsWith(`${userId}/temp-uploads/`)) {
+            console.warn(`Attempted to move a file from an invalid key: ${tempKey}`);
+            continue; // Skip this key to prevent malicious moves
+        }
+
+        const fileName = path.basename(tempKey);
+        const permanentKey = `${userId}/posts/${modifiedPostId}/${fileName}`; // The final destination
+
+        console.log(`Copying ${tempKey} to ${permanentKey}`);
+
+        // 1. Copy the object from temp to permanent folder
+        const copyCommand = new CopyObjectCommand({
+            Bucket: SPACES_BUCKET,
+            CopySource: `${SPACES_BUCKET}/${tempKey}`, // Must be in the format `bucket/key`
+            Key: permanentKey,
+        });
+
+        await s3Config.send(copyCommand);
+        successfulMoves.push(permanentKey);
+
+        console.log(`Successfully copied ${tempKey}`);
+
+        // 2. Delete the original object from the temporary folder
+        const deleteCommand = new DeleteObjectCommand({
+            Bucket: SPACES_BUCKET,
+            Key: tempKey,
+        });
+        
+        await s3Config.send(deleteCommand);
+        console.log(`Deleted original temp file ${tempKey}`);
+    }
+
+    // You might also want to delete the entire temp session folder for good measure
+    // after all files are moved. This is optional.
+    
+    await deleteFolderByPrefix(sessionPrefix);
+    console.log(`Cleared temporary session folder: ${sessionPrefix}`);
+
+    res.status(200).json({
+      message: 'Post published and files moved successfully!',
+      permanentKeys: successfulMoves,
+    });
+
+    },
+  ];
+
+  initializePostSession = [
+    async (req: Request, res: Response) => {
+
+    }
+  ]
 
   getPosts = [
     ValidatorMiddleware.inputs([

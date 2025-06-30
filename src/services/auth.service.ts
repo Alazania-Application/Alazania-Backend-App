@@ -310,14 +310,14 @@ class AuthService extends BaseService {
             u.password = $password,
             u.id = randomuuid(),
             u.isEmailVerified = false,
-            u.username = $email
-            u.createdAt = datetime()
-            u.following = 0
-            u.followers = 0
+            u.username = $email,
+            u.createdAt = datetime($timestamp),
+            u.following = 0,
+            u.followers = 0,
           RETURN u
         `,
 
-        params
+        {...params, timestamp : new Date().toISOString()}
     );
 
     const user = record.records.map((record) => {

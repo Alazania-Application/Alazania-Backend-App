@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { userController } from "@/controllers";
 import { authMiddleWare } from "@/middlewares/authenticator.middleware";
-import { multerConfig } from "@/middlewares/multer.middleware";
+import { multerConfig } from "@/middlewares/upload.middleware";
 
 export const userRouter = Router();
 
