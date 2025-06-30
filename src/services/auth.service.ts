@@ -281,7 +281,7 @@ class AuthService extends BaseService {
       { email }
     );
     if (result.records.length) {
-      throw new Error("Email already exists");
+      next(new ErrorResponse("Email already exists", HttpStatusCode.Conflict))
     }
     next();
   };
@@ -329,6 +329,7 @@ class AuthService extends BaseService {
     })[0];
 
     await this.sendEmailVerification(user);
+    console.log({user})
     return user;
   };
 

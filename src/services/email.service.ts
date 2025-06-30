@@ -185,9 +185,8 @@ class EmailService {
     const hasMXRecords = await this.hasMXRecords(email);
 
     if (!hasMXRecords) {
-      throw new ErrorResponse(
-        "Invalid email format",
-        HttpStatusCode.BadRequest
+      next(
+        new ErrorResponse("Invalid email format", HttpStatusCode.BadRequest)
       );
     }
     next();
