@@ -313,7 +313,7 @@ class AuthService extends BaseService {
             u.username = $email,
             u.createdAt = datetime($timestamp),
             u.following = 0,
-            u.followers = 0,
+            u.followers = 0
           RETURN u
         `,
 
