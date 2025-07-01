@@ -6,6 +6,7 @@ export enum NodeLabels {
   PostSession = "PostSession",
   Comment = "Comment",
   OTP = "OTP",
+  File = "File",
 }
 
 export enum RelationshipTypes {
