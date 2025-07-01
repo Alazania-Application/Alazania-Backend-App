@@ -3,6 +3,7 @@ export enum NodeLabels {
   Hashtag = "Hashtag",
   Topic = "Topic",
   Post = "Post",
+  PostSession = "PostSession",
   Comment = "Comment",
   OTP = "OTP",
 }
