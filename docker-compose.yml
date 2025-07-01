@@ -45,7 +45,7 @@ services:
       - NEO4J_PLUGINS=["apoc", "apoc-extended"]
     volumes:
       - db:/data
-      - /plugins:/plugins
+      - ./plugins:/plugins
 
 volumes:
   db:
