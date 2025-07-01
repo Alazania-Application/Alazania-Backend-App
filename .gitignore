@@ -9,3 +9,5 @@ public
 ./chat
 chat.db
 chat
+plugins/apoc-extended.jar
+plugins/apoc.jar
