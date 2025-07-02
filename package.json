@@ -78,7 +78,6 @@
     "morgan": "^1.10.0",
     "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",
-    "typescript": "^5.8.3",
-    "@types/aws-sdk": "^2.7.4"
+    "typescript": "^5.8.3"
   }
 }
