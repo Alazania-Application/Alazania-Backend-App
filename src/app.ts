@@ -1,4 +1,4 @@
-import 'module-alias/register';
+import "module-alias/register";
 import { createServer } from "http";
 import colors from "colors";
 import express, { Express } from "express";
@@ -6,6 +6,7 @@ import { env, port } from "./config";
 import indexMiddlewares from "./middlewares/index.middlewares";
 import BaseService from "./services/base.service";
 import { hashtagService } from "./services";
+import { seedService } from "./services/seed.service";
 
 const app: Express = express();
 indexMiddlewares(app);
@@ -16,19 +17,21 @@ const server = createServer(app);
 // Initialize database and start server
 async function startServer() {
   try {
-    await BaseService.getInstance()
-      .initializeDatabase()
-      .then(async () => {
-        await hashtagService.seedHashtagsAndTopics();
-      });
-    server.listen(port, () =>{
+    await seedService.initializeDatabase().then(async () => {
+      await hashtagService.seedHashtagsAndTopics();
+    });
+    server.listen(port, () => {
       console.log(
-        colors.yellow.bold(`🚀 API server running in ${env} mode on port ${port}`)
-      )
+        colors.yellow.bold(
+          `🚀 API server running in ${env} mode on port ${port}`
+        )
+      );
       console.log(
-        colors.green.bold(`📚 API Documentation: http://localhost:${port}/api/v1/docs`)
-      )}
-    );
+        colors.green.bold(
+          `📚 API Documentation: http://localhost:${port}/api/v1/docs`
+        )
+      );
+    });
   } catch (error) {
     console.error("Server startup error:", error);
   }

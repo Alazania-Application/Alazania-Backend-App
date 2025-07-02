@@ -1,10 +1,20 @@
 import { SPACES_BUCKET } from "@/config";
-import { deleteFolderByPrefix, s3Config, uploadFile } from "@/middlewares/upload.middleware";
+import {
+  deleteFolderByPrefix,
+  s3Config,
+  uploadFile,
+} from "@/middlewares/upload.middleware";
 import ValidatorMiddleware from "@/middlewares/validator.middleware";
 import { postService } from "@/services";
-import { CopyObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { ErrorResponse } from "@/utils";
+import {
+  CopyObjectCommand,
+  DeleteObjectCommand,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { HttpStatusCode } from "axios";
-import { Request, Response } from "express";
+import { NextFunction, Request, Response } from "express";
 import { body, param, query } from "express-validator";
 import path from "path";
 import sharp from "sharp";
@@ -58,33 +68,27 @@ class PostController {
       body("fileKeys.*", "fileKey is supposed to be a string")
         .exists()
         .isString(),
-      body("postId", "postId is required")
-        .exists()
-        .isUUID(),
-      body("sessionId", "sessionId is required")
-        .exists()
-        .isUUID(),
-      body("content", "content is required")
-        .exists()
-        .isUUID(),
-
+      body("postId", "postId is required").exists().isUUID(),
+      body("sessionId", "sessionId is required").exists().isUUID(),
+      body("content", "content is required").exists().isUUID(),
     ]),
     async (req: Request, res: Response) => {
       const userId = req.user?.id;
       const { postId, sessionId, fileKeys } = req.body;
 
-      const modifiedPostId = `${userId}-${postId}`
+      const modifiedPostId = `${userId}-${postId}`;
       const modifiedSessionId = `${userId}-${sessionId}`;
       const sessionPrefix = `${userId}/temp-uploads/${modifiedSessionId}/`;
 
       const successfulMoves: string[] = [];
 
-
       for (const tempKey of fileKeys) {
         // Security check: Ensure the key starts with the temporary prefix
         if (!tempKey.startsWith(`${userId}/temp-uploads/`)) {
-            console.warn(`Attempted to move a file from an invalid key: ${tempKey}`);
-            continue; // Skip this key to prevent malicious moves
+          console.warn(
+            `Attempted to move a file from an invalid key: ${tempKey}`
+          );
+          continue; // Skip this key to prevent malicious moves
         }
 
         const fileName = path.basename(tempKey);
@@ -94,9 +98,9 @@ class PostController {
 
         // 1. Copy the object from temp to permanent folder
         const copyCommand = new CopyObjectCommand({
-            Bucket: SPACES_BUCKET,
-            CopySource: `${SPACES_BUCKET}/${tempKey}`, // Must be in the format `bucket/key`
-            Key: permanentKey,
+          Bucket: SPACES_BUCKET,
+          CopySource: `${SPACES_BUCKET}/${tempKey}`, // Must be in the format `bucket/key`
+          Key: permanentKey,
         });
 
         await s3Config.send(copyCommand);
@@ -106,33 +110,83 @@ class PostController {
 
         // 2. Delete the original object from the temporary folder
         const deleteCommand = new DeleteObjectCommand({
-            Bucket: SPACES_BUCKET,
-            Key: tempKey,
+          Bucket: SPACES_BUCKET,
+          Key: tempKey,
         });
-        
+
         await s3Config.send(deleteCommand);
         console.log(`Deleted original temp file ${tempKey}`);
-    }
+      }
 
-    // You might also want to delete the entire temp session folder for good measure
-    // after all files are moved. This is optional.
-    
-    await deleteFolderByPrefix(sessionPrefix);
-    console.log(`Cleared temporary session folder: ${sessionPrefix}`);
+      // You might also want to delete the entire temp session folder for good measure
+      // after all files are moved. This is optional.
 
-    res.status(200).json({
-      message: 'Post published and files moved successfully!',
-      permanentKeys: successfulMoves,
-    });
+      await deleteFolderByPrefix(sessionPrefix);
+      console.log(`Cleared temporary session folder: ${sessionPrefix}`);
 
+      res.status(200).json({
+        message: "Post published and files moved successfully!",
+        permanentKeys: successfulMoves,
+      });
     },
   ];
 
+  getPreSignedUrl = async (req: Request, res: Response, next: NextFunction) => {
+    const userId = req?.user?.id;
+    const { fileName, fileType, sessionId, postId } = req.body;
+
+    if (!fileName || !fileType || !userId || !sessionId || !postId) {
+      throw new ErrorResponse(
+        "fileName, fileType, sessionId, postId, and userId are required.",
+        HttpStatusCode.BadRequest
+      );
+    }
+
+    const modifiedSessionId = `${userId}-${sessionId}`;
+
+    // Generate a unique filename to prevent collisions and duplicates in the S3 bucket
+    const fileExtension = path.extname(fileName);
+    const uniqueFileName = `/posts/${uuidv4()}${fileExtension}`;
+    const tempS3Key = `${userId}/temp-uploads/${modifiedSessionId}/${uniqueFileName}`;
+
+    const command = new PutObjectCommand({
+      Bucket: SPACES_BUCKET,
+      Key: tempS3Key,
+      ContentType: fileType,
+      // You can add metadata here to be stored with the object in S3
+      Metadata: {
+        "x-amz-meta-original-name": fileName,
+        "x-amz-meta-user-id": userId,
+        "x-amz-meta-session-id": modifiedSessionId,
+      },
+    });
+
+    // Generate the presigned URL with a limited expiration time (e.g., 60 minutes)
+    const expiresIn = 60 * 60; // 60 minutes
+    const presignedUrl = await getSignedUrl(s3Config, command, { expiresIn });
+
+    res.status(200).json({
+      message: "Post session initialized successfully!",
+      data: {
+        url: presignedUrl,
+        key: tempS3Key,
+      },
+    });
+  };
+
+  
   initializePostSession = [
     async (req: Request, res: Response) => {
+      const userId = req?.user?.id;
 
-    }
-  ]
+      const data = await postService.initializePostSession(userId);
+
+      res.status(201).json({
+        message: "Post session initialized successfully!",
+        data,
+      });
+    },
+  ];
 
   getPosts = [
     ValidatorMiddleware.inputs([

@@ -20,6 +20,7 @@ export enum RelationshipTypes {
   ENGAGES_WITH = "ENGAGES_WITH", // User -> POST
   
   // POST-RELATIONSHIPS
+  INITIALIZED_POST_SESSION = "INITIALIZED_POST_SESSION", // User -> POST
   POSTED = "POSTED", // User -> POST
   LIKED = "LIKED", //User -> POST
   COMMENTED_ON = "COMMENTED_ON", // User -> POST
