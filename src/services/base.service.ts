@@ -143,11 +143,8 @@ export default class BaseService {
       ["hashtag_slug_index", `FOR (h:${NodeLabels.Hashtag}) ON (h.slug)`],
 
       // === NEW: PostSession Indexes ===
-      [
-        "post_session_createdAt_index",
-        `FOR (s:${NodeLabels.PostSession}) ON (s.createdAt)`,
-      ], // For efficient TTL and time-based queries
       ["post_session_id_index", `FOR (s:${NodeLabels.PostSession}) ON (s.id)`], // For efficient lookup
+      ["ttl_index", `FOR (t:${NodeLabels.TTL}) ON (t.ttl)`], // For efficient lookup
 
       // === NEW: File Indexes ===
       ["file_id_index", `FOR (f:${NodeLabels.File}) ON (f.id)`],
@@ -166,24 +163,7 @@ export default class BaseService {
           `CREATE FULLTEXT INDEX user_search_index IF NOT EXISTS FOR (u:${NodeLabels.User}) ON EACH [u.username, u.firstname, u.lastname, u.email]`
         );
 
-        // --- Add APOC TTL for PostSession nodes ---
-        // This tells APOC to periodically delete :PostSession nodes based on their 'createdAt' property
-        // after 24 hours (86400 seconds)
-        const ttlConfig = tx.run(
-          `CALL apoc.ttl.add($label, $timestampProperty, $ttlSeconds)`,
-          {
-            label: NodeLabels.PostSession,
-            timestampProperty: "createdAt",
-            ttlSeconds: 86400, // 24 hours in seconds
-          }
-        );
-
-        await Promise.all([
-          ...contraintPromises,
-          ...indexPromises,
-          userSearch,
-          ttlConfig,
-        ]);
+        await Promise.all([...contraintPromises, ...indexPromises, userSearch]);
       })
       .then(async () => {
         console.log("Database initialized with constraints");

@@ -4,6 +4,7 @@ export enum NodeLabels {
   Topic = "Topic",
   Post = "Post",
   PostSession = "PostSession",
+  TTL = "TTL",
   Comment = "Comment",
   OTP = "OTP",
   File = "File",
