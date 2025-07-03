@@ -3,12 +3,7 @@ import jwt from "jsonwebtoken";
 import BaseService from "./base.service";
 import { CookieOptions, NextFunction, Request, Response } from "express";
 import { IUser } from "@/models";
-import {
-  ErrorResponse,
-  omitDTO,
-  toDTO,
-  verifyJwtToken,
-} from "@/utils";
+import { ErrorResponse, omitDTO, toDTO, verifyJwtToken } from "@/utils";
 import { HttpStatusCode } from "axios";
 import {
   env,
@@ -281,7 +276,7 @@ class AuthService extends BaseService {
       { email }
     );
     if (result.records.length) {
-      next(new ErrorResponse("Email already exists", HttpStatusCode.Conflict))
+      next(new ErrorResponse("Email already exists", HttpStatusCode.Conflict));
     }
     next();
   };
@@ -298,11 +293,7 @@ class AuthService extends BaseService {
    * @param {string} param0.password
    * @returns {unknown}
    */
-  createUser = async (params: {
-    email: string;
-    password: string;
-  }) => {
-
+  createUser = async (params: { email: string; password: string }) => {
     const record = await this.writeToDB(
       `
           MERGE (u:${NodeLabels.User} {email: $email})
@@ -317,7 +308,7 @@ class AuthService extends BaseService {
           RETURN u
         `,
 
-        {...params, timestamp : new Date().toISOString()}
+      { ...params, timestamp: new Date().toISOString() }
     );
 
     const user = record.records.map((record) => {
@@ -329,7 +320,7 @@ class AuthService extends BaseService {
     })[0];
 
     await this.sendEmailVerification(user);
-    console.log({user})
+    console.log({ user });
     return user;
   };
 
@@ -431,20 +422,7 @@ class AuthService extends BaseService {
     const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
     const { OTP, hashedOTP } = await otpService.generateOTP();
 
-    await this.writeToDB(
-      `
-      MERGE (o:${NodeLabels.OTP} {email: $email, type: $type })
-      SET 
-        o.createdAt = datetime(), 
-        o.expiresAt=datetime() + duration({ minutes: 5 }), 
-        o.otp = $otp 
-    `,
-      {
-        otp: hashedOTP,
-        type: "reset-password",
-        email: doc?.email,
-      }
-    );
+    await otpService.createOTP(hashedOTP, doc?.email, "reset-password");
 
     return await emailRepository.sendResetPasswordMail({
       user: {
@@ -513,20 +491,7 @@ class AuthService extends BaseService {
 
     const { OTP, hashedOTP } = await otpService.generateOTP();
 
-    await this.writeToDB(
-      `
-      MERGE (o:${NodeLabels.OTP} {email: $email, type: $type })
-      SET 
-        o.createdAt = datetime(), 
-        o.expiresAt=datetime() + duration({ minutes: 5 }), 
-        o.otp = $otp 
-    `,
-      {
-        otp: hashedOTP,
-        type: "verification",
-        email: user?.email,
-      }
-    );
+    await otpService.createOTP(hashedOTP, user?.email, "verification");
 
     await emailRepository.sendVerificationEmail({
       user,
@@ -596,7 +561,7 @@ class AuthService extends BaseService {
 }
 
 /**
- * 
+ *
  *
  * @type {AuthService}
  */

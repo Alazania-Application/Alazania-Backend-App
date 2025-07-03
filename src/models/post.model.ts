@@ -3,6 +3,7 @@ import { BaseModel } from "./base.model";
 export interface Post extends BaseModel {
   id: string;
   content: string;
+  files: string;
   createdAt: Date;
   engagement: {
     likes: number;
@@ -15,6 +16,6 @@ export interface CreatePostInput {
   postId: string;
   userId: string;
   content: string;
+  files?: string[]
   topicId?: string;
-  images?: string[]
 }

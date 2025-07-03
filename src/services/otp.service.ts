@@ -20,11 +20,28 @@ class OtpService extends BaseService {
     return { OTP, hashedOTP };
   }
 
+  createOTP = async (hashedOTP: string, email: string, type: "verification" | "reset-password") => {
+    return await this.writeToDB(
+      `
+      MERGE (otp:${NodeLabels.OTP} {email: $email, type: $type })
+      SET 
+        otp.otp = $hashedOTP 
+      WITH otp
+      CALL apoc.ttl.expireIn(otp, 5, 'm')// 5 minutes from now
+      RETURN otp
+    `,
+      {
+        hashedOTP,
+        type,
+        email,
+      }
+    );
+  };
+
   findOTP = async (email: string, type: "verification" | "reset-password") => {
     const result = await this.readFromDB(
       `
       MATCH (o:${NodeLabels.OTP} {email: $email, type: $type})
-      WHERE o.expiresAt > datetime()
       RETURN o
         `,
       { email, type }

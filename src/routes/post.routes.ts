@@ -5,11 +5,26 @@ import { multerConfig } from "@/middlewares/upload.middleware";
 
 export const postRouter = Router();
 
+postRouter.post(
+  "/generate-upload-url",
+  authMiddleWare.protectRoute,
+  postController.getPreSignedUrl
+);
+
+postRouter.get(
+  "/initialize",
+  authMiddleWare.protectRoute,
+  postController.initializePostSession
+);
+
 postRouter.get(
   "/",
   authMiddleWare.protectRoute,
   postController.getPosts
 );
+
+
+
 postRouter.get(
   "/:postId/likes",
   authMiddleWare.protectRoute,

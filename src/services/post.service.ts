@@ -7,6 +7,7 @@ import {
   toDTO,
   toNativeTypes,
 } from "@/utils";
+import { deleteFolderByPrefix } from "@/middlewares/upload.middleware";
 
 class PostService extends BaseService {
   async createPost(payload: CreatePostInput): Promise<Post | null> {
@@ -18,7 +19,7 @@ class PostService extends BaseService {
       postId: payload.postId,
       userId: payload.userId,
       content: payload.content,
-      images: payload?.images ?? [],
+      files: payload?.files ?? [],
       createdAt: now.toISOString(),
       topicId: payload?.topicId || null,
       hashtags,
@@ -79,6 +80,68 @@ class PostService extends BaseService {
         shares: postNode?.properties?.shares,
       },
     }) as Post;
+  }
+
+  async initializePostSession(userId: string): Promise<any> {
+    const params = {
+      userId,
+    };
+    
+    // Clean up temp uploads
+    const sessionPrefix = `${userId}/temp-uploads/`;
+    await deleteFolderByPrefix(sessionPrefix);
+
+
+    // const sessionResult = await this.readFromDB(
+    //   `
+    //   MATCH (u:${NodeLabels.User} {id: $userId})-[r:${RelationshipTypes.INITIALIZED_POST_SESSION}]->(session:${NodeLabels.PostSession} {userId: $userId})
+    //   RETURN session.sessionId
+    // `,
+    //   params
+    // ); // Make sure 'params' is passed to your readFromDB function
+
+    // let sessionId = null;
+
+    // // Check if any records were returned
+    // if (sessionResult.records.length > 0) {
+    //   // Get the first record (assuming you expect at most one session per user for this query)
+    //   const record = sessionResult.records[0];
+
+    //   // Extract the sessionId using the column name 'session.sessionId'
+    //   // Alternatively, you could use record.get(0) if it's the first and only returned item
+    //   sessionId = record.get("session.sessionId");
+
+    //   if (sessionId) {
+    //     const sessionPrefix = `${userId}/temp-uploads/`;
+    //     await deleteFolderByPrefix(sessionPrefix);
+    //   }
+    // }
+
+    // initialize the post session
+    const result = await this.writeToDB(
+      `
+        MATCH (u:${NodeLabels.User} {id: $userId})
+        MERGE (p:${NodeLabels.PostSession} {userId: $userId})
+        ON CREATE SET
+          p.sessionId = randomUUID(),
+          p.postId = randomUUID()
+        ON MATCH SET
+          p.content = "",
+          p.files = []
+
+
+        MERGE (u)-[r:${RelationshipTypes.INITIALIZED_POST_SESSION}]->(p)
+
+        WITH p
+        CALL apoc.ttl.expireIn(p, 1, 'd')
+        RETURN p
+      `,
+      params
+    );
+
+    const postNode = result.records[0].get("p");
+
+    return toNativeTypes(postNode);
   }
 
   // Likes
@@ -420,7 +483,7 @@ class PostService extends BaseService {
               }
             : null,
           hashtags: hashtags || [],
-          isLiked: Boolean(isLiked)
+          isLiked: Boolean(isLiked),
         });
       }
     });
@@ -498,7 +561,7 @@ class PostService extends BaseService {
               }
             : null,
           hashtags: hashtags || [],
-          isLiked: Boolean(isLiked)
+          isLiked: Boolean(isLiked),
         });
       }
     });
