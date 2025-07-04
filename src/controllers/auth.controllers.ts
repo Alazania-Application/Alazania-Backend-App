@@ -245,16 +245,13 @@ class AuthController {
       access_type: "offline",
       prompt: "consent",
     };
-    console.log("GOOGLE CONFIG::: ", config);
-    console.log("REDIRECT URI::: ", { GOOGLE_WEB_CLIENT_REDIRECT });
+
     const queryParams = new URLSearchParams();
     for (const [key, value] of Object.entries(config)) {
       queryParams.set(key, String(value));
     }
     const redirectUri =
       "https://accounts.google.com/o/oauth2/v2/auth?" + queryParams.toString();
-
-    console.log({ redirectUri });
 
     res.redirect(redirectUri);
   };
@@ -277,9 +274,6 @@ class AuthController {
       grant_type: "authorization_code",
     };
 
-    console.log("Google auth config::: ", { config });
-    console.log("REDIRECT URI::: ", { GOOGLE_WEB_CLIENT_REDIRECT });
-
     const { data } = await axios
       .post(`https://oauth2.googleapis.com/token`, config, {
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -289,7 +283,6 @@ class AuthController {
         throw new Error(getError(error));
       });
 
-    console.log("Data from auth::: ", { data });
 
     const { id_token } = data;
 
@@ -297,7 +290,6 @@ class AuthController {
       id_token
     );
 
-    console.log({ verificationResponse });
 
     const profile = verificationResponse?.payload;
 
@@ -319,7 +311,6 @@ class AuthController {
     }
 
     let user: IUser = await userService.getUserByQuery(email as string);
-    console.log("User 1", { user });
 
     if (!user) {
       const userData: Partial<IUser> = {
@@ -339,12 +330,10 @@ class AuthController {
       }
 
       user = await authService.createGoogleUser({ ...userData });
-      console.log("User 2", { user });
     }
 
     if (!user?.isEmailVerified && email_verified) {
       user = await authService.verifyUserEmail(email);
-      console.log("Verified User 3", { user });
     }
 
     return authService.sendTokenResponse(user, 200, res);
