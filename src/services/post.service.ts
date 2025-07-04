@@ -415,20 +415,25 @@ class PostService extends BaseService {
   async getFeed(
     userId: string,
     params: IReadQueryParams = {},
-    type: "following"| "spotlight"
+    type: "following" | "spotlight"
   ): Promise<any[]> {
-    const result = await this.readFromDB(
-      `
+    const { skip = 0, limit = 10 } = params; // Default skip and limit
+
+    let cypherQuery: string;
+    let queryParams: Record<string, any>;
+
+    if (type === "following") {
+      cypherQuery = `
         MATCH (u:${NodeLabels.User} {id: $userId})-[:${RelationshipTypes.POSTED}]->(myPost:${NodeLabels.Post})
         OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS}]->(followedUser:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(followedPost:${NodeLabels.Post})
         OPTIONAL MATCH (u)-[:${RelationshipTypes.INTERESTED_IN}]->(topic:${NodeLabels.Topic})<-[:${RelationshipTypes.BELONGS_TO}]-(topicPost:${NodeLabels.Post})
         OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS}]->(hashtag:${NodeLabels.Hashtag})<-[:${RelationshipTypes.HAS_HASHTAG}]-(hashtagPost:${NodeLabels.Post})
 
-        WITH u, 
-             COLLECT(DISTINCT myPost) as myPosts,
-             COLLECT(DISTINCT followedPost) as followedPosts,
-             COLLECT(DISTINCT topicPost) as topicPosts,
-             COLLECT(DISTINCT hashtagPost) as hashtagPosts
+        WITH u,
+              COLLECT(DISTINCT myPost) as myPosts,
+              COLLECT(DISTINCT followedPost) as followedPosts,
+              COLLECT(DISTINCT topicPost) as topicPosts,
+              COLLECT(DISTINCT hashtagPost) as hashtagPosts
         
         UNWIND (followedPosts + topicPosts + hashtagPosts + myPosts) as post
         WITH u, post, followedPosts, topicPosts, hashtagPosts, myPosts
@@ -440,22 +445,79 @@ class PostService extends BaseService {
         OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
         
         WITH post, creator, topic, liked, COLLECT(hashtag.name) as hashtags,
-             CASE 
-               WHEN post IN followedPosts THEN 3
-               WHEN post IN topicPosts THEN 2
-               WHEN post IN hashtagPosts THEN 1
-               ELSE 0
-             END as relevanceScore
+              CASE
+                WHEN post IN followedPosts THEN 3
+                WHEN post IN topicPosts THEN 2
+                WHEN post IN hashtagPosts THEN 1
+                ELSE 0
+              END as relevanceScore
         
         RETURN post, creator, topic, liked, hashtags, relevanceScore
         ORDER BY relevanceScore DESC , post.createdAt DESC
         SKIP $skip
         LIMIT $limit
-      `,
-      { userId, ...params }
-    );
+      `;
+      queryParams = { userId, skip, limit };
+    } else if (type === "spotlight") {
+      cypherQuery = `
+        MATCH (u:${NodeLabels.User} {id: $userId})
 
-    return result.records.map((record) => {
+        OPTIONAL MATCH (u)-[interest:${RelationshipTypes.INTERESTED_IN}]->(topic:${NodeLabels.Topic})<-[:${RelationshipTypes.BELONGS_TO}]-(topicPost:${NodeLabels.Post})
+        OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS}]->(hashtag:${NodeLabels.Hashtag})<-[:${RelationshipTypes.HAS_HASHTAG}]-(hashtagPost:${NodeLabels.Post})
+        OPTIONAL MATCH (u)-[:${RelationshipTypes.POSTED}]->(myPost:${NodeLabels.Post}) // Include user's own posts for spotlight
+
+        WITH u,
+              COLLECT(DISTINCT { post: topicPost, topicScore: interest.interestLevel }) AS topicResults,
+              COLLECT(DISTINCT hashtagPost) as hashtagPosts,
+              COLLECT(DISTINCT myPost) as myPosts
+        
+        // Combine all posts into a single list for processing
+        UNWIND (
+          [res IN topicResults WHERE res.post IS NOT NULL | res.post] +
+          hashtagPosts +
+          myPosts
+        ) AS post
+        
+        // Ensure distinct posts after UNWIND
+        WITH u, COLLECT(DISTINCT post) AS distinctPosts
+        UNWIND distinctPosts AS post
+
+        // Recalculate scores for each post based on its origin
+        WITH u, post,
+             SIZE([res IN topicResults WHERE res.post = post | res.topicScore]) AS topicScoreList,
+             post IN hashtagPosts AS isHashtagPost,
+             post IN myPosts AS isMyPost
+
+        WITH u, post,
+             CASE WHEN topicScoreList IS NOT NULL AND SIZE(topicScoreList) > 0 THEN HEAD(topicScoreList) ELSE 0 END AS topicScore,
+             CASE WHEN isHashtagPost THEN 1 ELSE 0 END AS hashtagScore,
+             CASE WHEN isMyPost THEN 1.5 ELSE 0 END AS myPostScore // Give a slightly higher score to user's own posts
+
+        // Calculate weighted relevance for spotlight
+        WITH u, post, topicScore, hashtagScore, myPostScore,
+             (topicScore * 0.5) + (hashtagScore * 0.3) + (myPostScore * 0.2) AS relevanceScore // Adjust weights as needed
+
+        // Get additional data for display
+        OPTIONAL MATCH (post)<-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User})
+        OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
+        OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
+        OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
+
+        WITH post, creator, topic, liked, COLLECT(DISTINCT hashtag.name) AS hashtags, relevanceScore
+
+        RETURN post, creator, topic, liked, hashtags, relevanceScore
+        ORDER BY relevanceScore DESC, post.createdAt DESC
+        SKIP $skip
+        LIMIT $limit
+      `;
+      queryParams = { userId, skip, limit };
+    } else {
+      throw new Error("Invalid feed type specified. Must be 'following' or 'spotlight'.");
+    }
+
+    const result = await this.readFromDB(cypherQuery, queryParams);
+
+    return result.records.map((record: any) => {
       const post = record.get("post");
       const creator = record.get("creator");
       const topic = record.get("topic");
@@ -487,8 +549,10 @@ class PostService extends BaseService {
           isLiked: Boolean(isLiked),
         });
       }
-    });
+      return null; // Or handle cases where post might be null
+    }).filter(Boolean); // Filter out any null entries if they occurred
   }
+
 
   async getFollowingFeed(
     userId: string,
