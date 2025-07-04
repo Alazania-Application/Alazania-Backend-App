@@ -412,6 +412,84 @@ class PostService extends BaseService {
   }
 
   // Get posts
+  async getFeed(
+    userId: string,
+    params: IReadQueryParams = {},
+    type: "following"| "spotlight"
+  ): Promise<any[]> {
+    const result = await this.readFromDB(
+      `
+        MATCH (u:${NodeLabels.User} {id: $userId})-[:${RelationshipTypes.POSTED}]->(myPost:${NodeLabels.Post})
+        OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS}]->(followedUser:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(followedPost:${NodeLabels.Post})
+        OPTIONAL MATCH (u)-[:${RelationshipTypes.INTERESTED_IN}]->(topic:${NodeLabels.Topic})<-[:${RelationshipTypes.BELONGS_TO}]-(topicPost:${NodeLabels.Post})
+        OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS}]->(hashtag:${NodeLabels.Hashtag})<-[:${RelationshipTypes.HAS_HASHTAG}]-(hashtagPost:${NodeLabels.Post})
+
+        WITH u, 
+             COLLECT(DISTINCT myPost) as myPosts,
+             COLLECT(DISTINCT followedPost) as followedPosts,
+             COLLECT(DISTINCT topicPost) as topicPosts,
+             COLLECT(DISTINCT hashtagPost) as hashtagPosts
+        
+        UNWIND (followedPosts + topicPosts + hashtagPosts + myPosts) as post
+        WITH u, post, followedPosts, topicPosts, hashtagPosts, myPosts
+        WHERE post IS NOT NULL
+        
+        MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(post)
+        OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
+        OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
+        OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
+        
+        WITH post, creator, topic, liked, COLLECT(hashtag.name) as hashtags,
+             CASE 
+               WHEN post IN followedPosts THEN 3
+               WHEN post IN topicPosts THEN 2
+               WHEN post IN hashtagPosts THEN 1
+               ELSE 0
+             END as relevanceScore
+        
+        RETURN post, creator, topic, liked, hashtags, relevanceScore
+        ORDER BY relevanceScore DESC , post.createdAt DESC
+        SKIP $skip
+        LIMIT $limit
+      `,
+      { userId, ...params }
+    );
+
+    return result.records.map((record) => {
+      const post = record.get("post");
+      const creator = record.get("creator");
+      const topic = record.get("topic");
+      const hashtags = record.get("hashtags");
+      const isLiked = record.get("liked");
+
+      if (post) {
+        return toNativeTypes({
+          id: post?.properties?.id,
+          content: post?.properties?.content,
+          createdAt: post?.properties?.createdAt,
+          images: post?.properties?.images || [],
+          engagement: {
+            likes: post?.properties?.likes,
+            comments: post?.properties?.comments,
+            shares: post?.properties?.shares,
+          },
+          creator: {
+            userId: creator?.properties?.id,
+            username: creator?.properties?.username,
+          },
+          topic: topic
+            ? {
+                topicId: topic?.properties?.topicId,
+                name: topic?.properties?.name,
+              }
+            : null,
+          hashtags: hashtags || [],
+          isLiked: Boolean(isLiked),
+        });
+      }
+    });
+  }
+
   async getFollowingFeed(
     userId: string,
     params: IReadQueryParams = {}

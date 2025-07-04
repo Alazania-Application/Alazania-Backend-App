@@ -11,11 +11,11 @@ postRouter.post(
   postController.getPreSignedUrl
 );
 
-postRouter.get(
-  "/initialize",
-  authMiddleWare.protectRoute,
-  postController.initializePostSession
-);
+// postRouter.get(
+//   "/initialize",
+//   authMiddleWare.protectRoute,
+//   postController.initializePostSession
+// );
 
 postRouter.get(
   "/",
