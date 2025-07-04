@@ -174,7 +174,6 @@ class PostController {
     });
   };
 
-  
   initializePostSession = [
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
@@ -198,15 +197,12 @@ class PostController {
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
 
-      const type = String(req.query?.type).trim().toLowerCase() || "following";
+      const type = (String(req.query?.type).trim().toLowerCase() ||
+        "following") as "spotlight" | "following";
 
       // TODO: determine type of posts to show based on selected type
 
-      let data = await postService.getFollowingFeed(userId, req.query);
-
-      if (!data.length) {
-        data = await postService.getPersonalizedFeed(userId, req.query);
-      }
+      const data = await postService.getFeed(userId, req.query, type);
 
       res.status(HttpStatusCode.Ok).json({
         success: true,
