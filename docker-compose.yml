@@ -14,6 +14,7 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
+
   neo4j:
     image: neo4j:5.20
     container_name: neo4j
@@ -21,14 +22,14 @@ services:
       - "7474:7474"   # HTTP (browser)
       - "7687:7687"   # Bolt (driver)
     environment:
-     - NEO4J_AUTH=neo4j/admin001
-    - NEO4JLABS_PLUGINS=["apoc"]
-    - NEO4J_apoc_ttl_enabled=true
-    - NEO4J_apoc_ttl_schedule=10000
-    - NEO4J_apoc_ttl_limit=1000
-    - NEO4J_dbms_security_procedures_unrestricted=apoc.*
-    - NEO4J_dbms_security_procedures_whitelist=apoc.*
-    - NEO4J_ACCEPT_LICENSE_AGREEMENT=yes
+      - NEO4J_AUTH=neo4j/admin001
+      - NEO4JLABS_PLUGINS=["apoc"]
+      - NEO4J_apoc_ttl_enabled=true
+      - NEO4J_apoc_ttl_schedule=10000
+      - NEO4J_apoc_ttl_limit=1000
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      - NEO4J_dbms_security_procedures_whitelist=apoc.*
+      - NEO4J_ACCEPT_LICENSE_AGREEMENT=yes
     volumes:
       - db:/data
 
