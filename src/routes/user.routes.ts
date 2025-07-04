@@ -10,6 +10,7 @@ userRouter.get(
   authMiddleWare.protectRoute,
   userController.getProfile
 );
+
 userRouter.get(
   "/suggested-users",
   authMiddleWare.protectRoute,
@@ -60,4 +61,15 @@ userRouter.get(
   "/following/:userId",
   authMiddleWare.protectRoute,
   userController.getUserFollowing
+);
+userRouter.get(
+  "/my-followers",
+  authMiddleWare.protectRoute,
+  userController.getMyFollowers
+);
+
+userRouter.get(
+  "/my-following",
+  authMiddleWare.protectRoute,
+  userController.getMyFollowing
 );

@@ -354,7 +354,11 @@ class AuthService extends BaseService {
         MERGE (u:${NodeLabels.User} {email: $email})
         ON CREATE SET 
           u.id = randomuuid(),
-          u += $updates
+          u.username = $email,
+          u.createdAt = datetime($timestamp),
+          u += $updates,
+          u.following = 0,
+          u.followers = 0,
 
         ON MATCH SET  
           u.id = CASE WHEN u.id IS NULL THEN randomuuid() ELSE u.id END,

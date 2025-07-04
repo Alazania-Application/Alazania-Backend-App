@@ -21,7 +21,7 @@ class PostService extends BaseService {
       content: payload.content,
       files: payload?.files ?? [],
       createdAt: now.toISOString(),
-      topicId: payload?.topicId || null,
+      topicSlug: payload?.topicSlug || null,
       hashtags,
     };
 
@@ -29,13 +29,13 @@ class PostService extends BaseService {
     const result = await this.writeToDB(
       `
         MATCH (u:${NodeLabels.User} {id: $userId})
-        OPTIONAL MATCH (t:${NodeLabels.Topic} {id: $topicId})
+        OPTIONAL MATCH (t:${NodeLabels.Topic} {slug: $topicSlug})
         WITH u, t
 
         CREATE (p:${NodeLabels.Post} {
           id: $postId,
           content: $content,
-          images: $images,
+          files: $files,
           createdAt: datetime($createdAt),
           likes: 0,
           comments: 0,
@@ -73,7 +73,7 @@ class PostService extends BaseService {
       id: postNode?.properties?.id,
       content: postNode?.properties?.content,
       createdAt: postNode?.properties?.createdAt,
-      images: postNode?.properties?.images ?? [],
+      files: postNode?.properties?.files ?? [],
       engagement: {
         likes: postNode?.properties?.likes,
         comments: postNode?.properties?.comments,
@@ -86,11 +86,10 @@ class PostService extends BaseService {
     const params = {
       userId,
     };
-    
+
     // Clean up temp uploads
     const sessionPrefix = `${userId}/temp-uploads/`;
     await deleteFolderByPrefix(sessionPrefix);
-
 
     // const sessionResult = await this.readFromDB(
     //   `
@@ -422,7 +421,47 @@ class PostService extends BaseService {
     let cypherQuery: string;
     let queryParams: Record<string, any>;
 
-    if (type === "following") {
+    if (type === "spotlight") {
+      cypherQuery = `
+      MATCH (u:${NodeLabels.User} {id: $userId})
+
+      OPTIONAL MATCH (u)-[interest:${RelationshipTypes.INTERESTED_IN}]->(topic:${NodeLabels.Topic})<-[:${RelationshipTypes.BELONGS_TO}]-(topicPost:${NodeLabels.Post})
+      OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS_HASHTAG}]
+      ->(hashtag:${NodeLabels.Hashtag})
+      <-[:${RelationshipTypes.HAS_HASHTAG}]
+      -(hashtagPost:${NodeLabels.Post})
+      
+      WITH u,
+          COLLECT(DISTINCT { post: topicPost, topicScore: interest.interestLevel }) AS topicResults,
+          COLLECT(DISTINCT hashtagPost) as hashtagPosts
+      
+      // Flatten posts into one list, adding default scores where missing
+      UNWIND topicResults AS topicResult
+      WITH u, topicResult.post AS post, topicResult.topicScore AS topicScore, hashtagPosts
+
+      WITH u, post,
+          COALESCE(topicScore, 0) AS topicScore,
+          CASE WHEN post IN hashtagPosts THEN 1 ELSE 0 END AS hashtagScore
+
+      // Calculate weighted relevance
+      WITH u, post, topicScore, hashtagScore,
+          topicScore * 0.7 + hashtagScore * 0.3 AS relevanceScore
+
+      // Get additional data for display
+      OPTIONAL MATCH (post)<-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User})
+      OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
+      OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
+      OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
+
+      WITH post, creator, topic, liked, COLLECT(DISTINCT hashtag.name) AS hashtags, relevanceScore
+
+      RETURN post, creator, topic, liked, hashtags, relevanceScore
+      ORDER BY relevanceScore DESC, post.createdAt DESC
+      SKIP $skip
+      LIMIT $limit
+    `;
+      queryParams = { userId, skip, limit };
+    } else {
       cypherQuery = `
         MATCH (u:${NodeLabels.User} {id: $userId})-[:${RelationshipTypes.POSTED}]->(myPost:${NodeLabels.Post})
         OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS}]->(followedUser:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(followedPost:${NodeLabels.Post})
@@ -458,101 +497,43 @@ class PostService extends BaseService {
         LIMIT $limit
       `;
       queryParams = { userId, skip, limit };
-    } else if (type === "spotlight") {
-      cypherQuery = `
-        MATCH (u:${NodeLabels.User} {id: $userId})
-
-        OPTIONAL MATCH (u)-[interest:${RelationshipTypes.INTERESTED_IN}]->(topic:${NodeLabels.Topic})<-[:${RelationshipTypes.BELONGS_TO}]-(topicPost:${NodeLabels.Post})
-        OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS}]->(hashtag:${NodeLabels.Hashtag})<-[:${RelationshipTypes.HAS_HASHTAG}]-(hashtagPost:${NodeLabels.Post})
-        OPTIONAL MATCH (u)-[:${RelationshipTypes.POSTED}]->(myPost:${NodeLabels.Post}) // Include user's own posts for spotlight
-
-        WITH u,
-              COLLECT(DISTINCT { post: topicPost, topicScore: interest.interestLevel }) AS topicResults,
-              COLLECT(DISTINCT hashtagPost) as hashtagPosts,
-              COLLECT(DISTINCT myPost) as myPosts
-        
-        // Combine all posts into a single list for processing
-        UNWIND (
-          [res IN topicResults WHERE res.post IS NOT NULL | res.post] +
-          hashtagPosts +
-          myPosts
-        ) AS post
-        
-        // Ensure distinct posts after UNWIND
-        WITH u, COLLECT(DISTINCT post) AS distinctPosts
-        UNWIND distinctPosts AS post
-
-        // Recalculate scores for each post based on its origin
-        WITH u, post,
-             SIZE([res IN topicResults WHERE res.post = post | res.topicScore]) AS topicScoreList,
-             post IN hashtagPosts AS isHashtagPost,
-             post IN myPosts AS isMyPost
-
-        WITH u, post,
-             CASE WHEN topicScoreList IS NOT NULL AND SIZE(topicScoreList) > 0 THEN HEAD(topicScoreList) ELSE 0 END AS topicScore,
-             CASE WHEN isHashtagPost THEN 1 ELSE 0 END AS hashtagScore,
-             CASE WHEN isMyPost THEN 1.5 ELSE 0 END AS myPostScore // Give a slightly higher score to user's own posts
-
-        // Calculate weighted relevance for spotlight
-        WITH u, post, topicScore, hashtagScore, myPostScore,
-             (topicScore * 0.5) + (hashtagScore * 0.3) + (myPostScore * 0.2) AS relevanceScore // Adjust weights as needed
-
-        // Get additional data for display
-        OPTIONAL MATCH (post)<-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User})
-        OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
-        OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
-        OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
-
-        WITH post, creator, topic, liked, COLLECT(DISTINCT hashtag.name) AS hashtags, relevanceScore
-
-        RETURN post, creator, topic, liked, hashtags, relevanceScore
-        ORDER BY relevanceScore DESC, post.createdAt DESC
-        SKIP $skip
-        LIMIT $limit
-      `;
-      queryParams = { userId, skip, limit };
-    } else {
-      throw new Error("Invalid feed type specified. Must be 'following' or 'spotlight'.");
     }
 
     const result = await this.readFromDB(cypherQuery, queryParams);
 
-    return result.records.map((record: any) => {
-      const post = record.get("post");
-      const creator = record.get("creator");
-      const topic = record.get("topic");
-      const hashtags = record.get("hashtags");
-      const isLiked = record.get("liked");
+    return result.records
+      .map((record: any) => {
+        const post = record.get("post");
+        const creator = record.get("creator");
+        const topic = record.get("topic");
+        const hashtags = record.get("hashtags");
+        const isLiked = record.get("liked");
 
-      if (post) {
-        return toNativeTypes({
-          id: post?.properties?.id,
-          content: post?.properties?.content,
-          createdAt: post?.properties?.createdAt,
-          images: post?.properties?.images || [],
-          engagement: {
-            likes: post?.properties?.likes,
-            comments: post?.properties?.comments,
-            shares: post?.properties?.shares,
-          },
-          creator: {
-            userId: creator?.properties?.id,
-            username: creator?.properties?.username,
-          },
-          topic: topic
-            ? {
-                topicId: topic?.properties?.topicId,
-                name: topic?.properties?.name,
-              }
-            : null,
-          hashtags: hashtags || [],
-          isLiked: Boolean(isLiked),
-        });
-      }
-      return null; // Or handle cases where post might be null
-    }).filter(Boolean); // Filter out any null entries if they occurred
+        if (post) {
+          return toNativeTypes({
+            id: post?.properties?.id,
+            content: post?.properties?.content,
+            createdAt: post?.properties?.createdAt,
+            files: post?.properties?.files || [],
+            engagement: {
+              likes: post?.properties?.likes,
+              comments: post?.properties?.comments,
+              shares: post?.properties?.shares,
+            },
+            creator: {
+              userId: creator?.properties?.id,
+              username: creator?.properties?.username,
+            },
+            topic: topic ? topic?.properties?.name : null,
+            hashtags: hashtags || [],
+            isLiked: Boolean(isLiked),
+            isMyPost: Boolean(creator?.properties?.id == userId),
+          });
+        }
+        return null; // Or handle cases where post might be null
+      })
+      .filter(Boolean); // Filter out any null entries if they occurred
   }
-
 
   async getFollowingFeed(
     userId: string,

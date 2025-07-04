@@ -77,6 +77,37 @@ class InterestController {
     },
   ];
 
+  removeUserInterests = [
+    ValidatorMiddleware.inputs([
+      body("topics", "Please provide topics").exists().isArray(),
+      body("topics.*", "Each topic must be a string").exists().isString(),
+    ]),
+
+    async (req: Request, res: Response) => {
+      const topics = req.body.topics as string[] | string;
+
+      const topicsArray = (
+        Array.isArray(topics) ? topics : topics?.split(",")
+      ).map((v) =>
+        slugify(v, {
+          trim: true,
+          lower: true,
+        })
+      );
+
+      const result = await topicService.removeUserInterests(
+        req?.user?.id,
+        topicsArray as string[]
+      );
+
+      res.status(HttpStatusCode.Ok).json({
+        success: true,
+        data: result,
+        message: "Topic(s) removed successfully",
+      });
+    },
+  ];
+
   followHashtags = [
     ValidatorMiddleware.inputs([
       body("hashtags", "Please provide hashtags").exists().isArray(),
@@ -100,6 +131,33 @@ class InterestController {
         success: true,
         data: result,
         message: "Hashtags(s) followed successfully",
+      });
+    },
+  ];
+
+  unfollowHashtags = [
+    ValidatorMiddleware.inputs([
+      body("hashtags", "Please provide hashtags").exists().isArray(),
+      body("hashtags.*", "Each hashtag must be a string").exists().isString(),
+    ]),
+
+    async (req: Request, res: Response) => {
+      const hashtagsArray = req.body.hashtags.map((v: string) =>
+        slugify(v, {
+          trim: true,
+          lower: true,
+        })
+      );
+
+      const result = await hashtagService.unfollowHashtags(
+        req?.user?.id,
+        hashtagsArray as string[]
+      );
+
+      res.status(HttpStatusCode.Ok).json({
+        success: true,
+        data: result,
+        message: "Hashtags(s) unfollowed successfully",
       });
     },
   ];
@@ -130,7 +188,20 @@ class InterestController {
 
       const result = await hashtagService.getHashtagsByTopic(query);
 
-      res.status(HttpStatusCode.Created).json({
+      res.status(HttpStatusCode.Ok).json({
+        success: true,
+        data: result,
+        message: "Hashtags fetched successfully",
+      });
+    },
+  ];
+
+  getUserFollowedHashtags = [
+    async (req: Request, res: Response) => {
+
+      const result = await hashtagService.getUserFollowedHashtags(req.user?.id,);
+
+      res.status(HttpStatusCode.Ok).json({
         success: true,
         data: result,
         message: "Hashtags fetched successfully",
@@ -148,7 +219,7 @@ class InterestController {
 
       const result = await hashtagService.getHashtagsByTopic(query);
 
-      res.status(HttpStatusCode.Created).json({
+      res.status(HttpStatusCode.Ok).json({
         success: true,
         data: result,
         message: "Hashtags fetched successfully",
@@ -165,7 +236,7 @@ class InterestController {
 
       const result = await hashtagService.getTrendingHashtags(query);
 
-      res.status(HttpStatusCode.Created).json({
+      res.status(HttpStatusCode.Ok).json({
         success: true,
         data: result,
         message: "Hashtags fetched successfully",

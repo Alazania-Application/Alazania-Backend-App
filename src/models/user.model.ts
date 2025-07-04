@@ -20,6 +20,9 @@ export interface IUser extends BaseModel {
   isFollowingBack?: boolean;
   isFollowing?: boolean;
 
+  following?: number;
+  followers?: number;
+
   lastLogin?: Date | string;
 }
 

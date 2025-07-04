@@ -18,11 +18,16 @@ postRouter.get(
 );
 
 postRouter.get(
-  "/",
+  "/following",
   authMiddleWare.protectRoute,
-  postController.getPosts
+  postController.getFollowingPosts
 );
 
+postRouter.get(
+  "/spotlight",
+  authMiddleWare.protectRoute,
+  postController.getSpotlightPosts
+);
 
 
 postRouter.get(

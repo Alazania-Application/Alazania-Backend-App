@@ -191,7 +191,10 @@ class UserController {
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
 
-      const data = await userService.getUserFollowers(userId, req.params.userId);
+      const data = await userService.getUserFollowers(
+        userId,
+        req.params.userId
+      );
 
       res.status(HttpStatusCode.Ok).json({
         success: true,
@@ -208,7 +211,10 @@ class UserController {
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
 
-      const data = await userService.getUserFollowing(userId, req.params.userId);
+      const data = await userService.getUserFollowing(
+        userId,
+        req.params.userId
+      );
 
       res.status(HttpStatusCode.Ok).json({
         success: true,
@@ -217,6 +223,30 @@ class UserController {
       });
     },
   ];
+
+  getMyFollowers = async (req: Request, res: Response) => {
+    const userId = req?.user?.id;
+
+    const data = await userService.getMyFollowers(userId);
+
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      data,
+      message: "My follower(s) fetched successfully",
+    });
+  };
+
+  getMyFollowing = async (req: Request, res: Response) => {
+    const userId = req?.user?.id;
+
+    const data = await userService.getMyFollowing(userId);
+
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      data,
+      message: "My following(s) fetched successfully",
+    });
+  };
 }
 
 export const userController = new UserController();

@@ -187,30 +187,30 @@ class PostController {
     },
   ];
 
-  getPosts = [
-    ValidatorMiddleware.inputs([
-      query("type", "type must either be 'spotlight' or 'following'")
-        .optional()
-        .isIn(["spotlight", "following"])
-        .withMessage("type must be either 'spotlight' or 'following'"),
-    ]),
-    async (req: Request, res: Response) => {
-      const userId = req?.user?.id;
 
-      const type = (String(req.query?.type).trim().toLowerCase() ||
-        "following") as "spotlight" | "following";
+  getFollowingPosts = async (req: Request, res: Response) => {
+    const userId = req?.user?.id;
 
-      // TODO: determine type of posts to show based on selected type
+    const data = await postService.getFeed(userId, req.query, "following");
 
-      const data = await postService.getFeed(userId, req.query, type);
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      data,
+      message: "Posts fetched successfully",
+    });
+  };
 
-      res.status(HttpStatusCode.Ok).json({
-        success: true,
-        data,
-        message: "Posts fetched successfully",
-      });
-    },
-  ];
+  getSpotlightPosts = async (req: Request, res: Response) => {
+    const userId = req?.user?.id;
+
+    const data = await postService.getFeed(userId, req.query, "spotlight");
+
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      data,
+      message: "Posts fetched successfully",
+    });
+  };
 
   // LIKES
   likeAPost = [
