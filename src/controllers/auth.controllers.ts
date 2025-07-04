@@ -274,6 +274,7 @@ class AuthController {
     };
 
     console.log("Google auth config::: ",{config})
+    console.log("REDIRECT URI::: ",{GOOGLE_WEB_CLIENT_REDIRECT})
 
     const { data } = await axios
       .post(`https://oauth2.googleapis.com/token`, config, {
