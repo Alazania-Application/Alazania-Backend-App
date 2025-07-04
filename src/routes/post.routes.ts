@@ -11,6 +11,12 @@ postRouter.post(
   postController.getPreSignedUrl
 );
 
+postRouter.post(
+  "/publish",
+  authMiddleWare.protectRoute,
+  postController.publishPost
+);
+
 postRouter.get(
   "/initialize",
   authMiddleWare.protectRoute,
