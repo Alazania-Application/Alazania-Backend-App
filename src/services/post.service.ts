@@ -139,7 +139,7 @@ class PostService extends BaseService {
       params
     );
 
-    const postNode = result.records[0].get("p");
+    const postNode = result.records[0].get("p")?.properties;
 
     return toNativeTypes(postNode);
   }

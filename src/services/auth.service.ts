@@ -357,13 +357,15 @@ class AuthService extends BaseService {
           u += $updates
 
         ON MATCH SET  
-          u.id = CASE WHEN u.id IS NULL THEN $id ELSE u.id END,
+          u.id = CASE WHEN u.id IS NULL THEN randomuuid() ELSE u.id END,
           u += $updates
 
         RETURN u
       `,
       { email: payload?.email, updates }
     );
+
+    console.log({result})
 
     const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
 

@@ -42,7 +42,6 @@ class AuthController {
         password: hashedPassword,
       };
       const user = await authService.createUser(payload);
-    
 
       res.status(HttpStatusCode.Created).json({
         success: true,
@@ -153,7 +152,10 @@ class AuthController {
         throw new ErrorResponse("User not found", HttpStatusCode.BadRequest);
       }
       if (user?.isEmailVerified) {
-        throw new ErrorResponse("Account already verified", HttpStatusCode.BadRequest);
+        throw new ErrorResponse(
+          "Account already verified",
+          HttpStatusCode.BadRequest
+        );
       }
 
       await authService.verifyUserEmail(user.email, { otp: req.body.otp });
