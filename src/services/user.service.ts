@@ -20,6 +20,24 @@ class UserService extends BaseService {
     }
   };
 
+  withPublicDTO = (doc: IUser, extraFields: string[] = []) => {
+    try {
+      return this.withPickDTO(doc, [
+        "firstName",
+        "lastName",
+        "avatar",
+        "id",
+        "email",
+        "username",
+        "lastLogin",
+        "following",
+        "followers",
+        ...extraFields,
+      ]);
+    } catch (error) {
+      return null;
+    }
+  };
   getUserById = async (id: string): Promise<UserResponseDto> => {
     const result = await this.readFromDB(
       `
@@ -119,13 +137,7 @@ class UserService extends BaseService {
     const result = await this.readFromDB(query, params);
 
     const users = result.records.map((v) => ({
-      ...this.withPickDTO(v.get("other").properties, [
-        "firstName",
-        "lastName",
-        "id",
-        "email",
-        "username",
-      ]),
+      ...this.withPublicDTO(v.get("other").properties),
       isFollowingBack: Boolean(v.get("isFollowingBack")?.properties),
       isFollowing: Boolean(v.get("isFollowing")?.properties),
     })) as IUser[];
@@ -168,13 +180,7 @@ class UserService extends BaseService {
     const result = await this.readFromDB(query, params);
 
     return result.records.map((v) =>
-      this.withPickDTO(v.get("other").properties, [
-        "firstName",
-        "lastName",
-        "id",
-        "email",
-        "username",
-      ])
+      this.withPublicDTO(v.get("other")?.properties)
     ) as IUser[];
   };
 
@@ -200,7 +206,7 @@ class UserService extends BaseService {
     });
 
     const doc = result.records.map((v) => ({
-      ...v.get("userToFollow").properties,
+      ...this.withPublicDTO(v.get("userToFollow").properties),
       isFollowingBack: Boolean(v.get("isFollowingBack")?.properties),
       isFollowing: Boolean(v.get("isFollowing")?.properties),
     }))[0] as IUser;
@@ -231,7 +237,7 @@ class UserService extends BaseService {
     });
 
     const doc = result.records.map((v) => ({
-      ...v.get("userToUnfollow").properties,
+      ...this.withPublicDTO(v.get("userToUnfollow").properties),
       isFollowingBack: Boolean(v.get("isFollowingBack")?.properties),
       isFollowing: Boolean(v.get("isFollowing")?.properties),
     }))[0] as IUser;
@@ -264,7 +270,7 @@ class UserService extends BaseService {
     });
 
     const users = result.records.map((v) => {
-      const user = this.withDTO({
+      const user = this.withPublicDTO({
         ...v.get("user").properties,
       }) as any;
 
@@ -298,13 +304,82 @@ class UserService extends BaseService {
     const result = await this.readFromDB(query, {
       currentUserId,
       userToMatchId,
-      timestamp: new Date().toISOString(),
     });
 
     const users = result.records.map((v) => {
-      const user = this.withDTO({
+      const user = this.withPublicDTO({
         ...v.get("user").properties,
       }) as any;
+
+      if (user?.id !== currentUserId) {
+        user.isFollowing = Boolean(v.get("isFollowing")?.properties);
+        user.isFollowingBack = Boolean(v.get("isFollowingBack")?.properties);
+      }
+
+      return user;
+    }) as IUser[];
+
+    return users;
+  };
+
+  getMyFollowing = async (currentUserId: string) => {
+    const query = `
+      MATCH (currentUser: ${NodeLabels.User} {id: $currentUserId})
+      MATCH (userToMatch: ${NodeLabels.User})
+
+      MATCH (user: ${NodeLabels.User})<-[:${RelationshipTypes.FOLLOWS}]-(userToMatch)
+      WHERE user.id <> userToMatch.id
+        AND (user.isDemo IS NULL OR user.isDemo <> true)
+
+      OPTIONAL MATCH (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(user)
+      OPTIONAL MATCH (user)-[isFollowingBack:${RelationshipTypes.FOLLOWS}]->(currentUser)
+      
+      RETURN user, isFollowingBack, isFollowing
+      LIMIT $limit
+    `;
+
+    const result = await this.readFromDB(query, {
+      currentUserId,
+    });
+
+    const users = result.records.map((v) => {
+      const user = this.withPublicDTO({
+        ...v.get("user").properties,
+      }) as any;
+
+      if (user?.id !== currentUserId) {
+        user.isFollowing = Boolean(v.get("isFollowing")?.properties);
+        user.isFollowingBack = Boolean(v.get("isFollowingBack")?.properties);
+      }
+
+      return user;
+    }) as IUser[];
+
+    return users;
+  };
+
+  getMyFollowers = async (currentUserId: string) => {
+    const query = `
+      MATCH (currentUser: ${NodeLabels.User} {id: $currentUserId})
+      MATCH (userToMatch: ${NodeLabels.User})
+
+      MATCH (user: ${NodeLabels.User})-[:${RelationshipTypes.FOLLOWS}]->(userToMatch)
+      WHERE user.id <> userToMatch.id
+        AND (user.isDemo IS NULL OR user.isDemo <> true)
+
+      OPTIONAL MATCH (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(user)
+      OPTIONAL MATCH (user)-[isFollowingBack:${RelationshipTypes.FOLLOWS}]->(currentUser)
+      
+      RETURN user, isFollowingBack, isFollowing
+      LIMIT $limit
+    `;
+
+    const result = await this.readFromDB(query, {
+      currentUserId,
+    });
+
+    const users = result.records.map((v) => {
+      const user = this.withPublicDTO(v.get("user")?.properties) as any;
 
       if (user?.id !== currentUserId) {
         user.isFollowing = Boolean(v.get("isFollowing")?.properties);

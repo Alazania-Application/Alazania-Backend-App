@@ -17,5 +17,5 @@ export interface CreatePostInput {
   userId: string;
   content: string;
   files?: string[]
-  topicId?: string;
+  topicSlug?: string;
 }

@@ -30,9 +30,9 @@ interestRouter.post(
 );
 
 interestRouter.post(
-  "/topic/follow",
+  "/topic/unfollow",
   authMiddleWare.protectRoute,
-  interestController.addUserInterests
+  interestController.removeUserInterests
 );
 
 // HASHTAGS
@@ -40,6 +40,18 @@ interestRouter.post(
   "/hashtag/follow",
   authMiddleWare.protectRoute,
   interestController.followHashtags
+);
+
+interestRouter.post(
+  "/hashtag/unfollow",
+  authMiddleWare.protectRoute,
+  interestController.unfollowHashtags
+);
+
+interestRouter.get(
+  "/hashtag/followed",
+  authMiddleWare.protectRoute,
+  interestController.getUserFollowedHashtags
 );
 
 interestRouter.get(

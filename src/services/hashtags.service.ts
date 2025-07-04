@@ -7,7 +7,7 @@ import { IReadQueryParams } from "@/utils";
 
 class HashtagService extends BaseService {
   seedHashtagsAndTopics = async () => {
-    const now = new Date()
+    const now = new Date();
     const existingHashtags = await this.readFromDB(`
       MATCH(h:${NodeLabels.Hashtag})
       RETURN h.slug
@@ -83,7 +83,7 @@ class HashtagService extends BaseService {
 
   createHashtag = async (inputs: CreateHashtagInput[]): Promise<any> => {
     const allHashtagPromises: Promise<any>[] = [];
-    const now = new Date()
+    const now = new Date();
 
     inputs.forEach((hashtag) => {
       const hashtagName = hashtag.name.startsWith("#")
@@ -110,7 +110,7 @@ class HashtagService extends BaseService {
         {
           hashtagSlug,
           hashtagName,
-          createdAt: now.toISOString()
+          createdAt: now.toISOString(),
         }
       );
 
@@ -133,28 +133,6 @@ class HashtagService extends BaseService {
         SET r.relevance = $relevance
       `,
       { hashtagId, topicSlug, relevance }
-    );
-  };
-
-  unfollowHashtag = async (
-    userId: string,
-    hashtagId: string
-  ): Promise<void> => {
-    await this.writeToDB(
-      `
-        MATCH (u:${NodeLabels.User} {userId: $userId})-[r:FOLLOWS]->(h:${NodeLabels.Hashtag} {hashtagId: $hashtagId})
-        DELETE r
-      `,
-      { userId, hashtagId }
-    );
-
-    // Update hashtag popularity
-    await this.writeToDB(
-      `
-        MATCH (h:${NodeLabels.Hashtag} {hashtagId: $hashtagId})
-        SET h.popularity = CASE WHEN h.popularity > 0 THEN h.popularity - 1 ELSE 0 END
-      `,
-      { hashtagId }
     );
   };
 
@@ -243,7 +221,7 @@ class HashtagService extends BaseService {
     );
 
     return result.records.map((record) => {
-      const hashtag = record.get("hashtag")
+      const hashtag = record.get("hashtag");
       return hashtag;
     });
   };
@@ -258,7 +236,7 @@ class HashtagService extends BaseService {
         MATCH (u:${NodeLabels.User} {id: $userId})
         UNWIND $hashtagSlugs AS hashtagSlug
         MATCH (h:${NodeLabels.Hashtag} {slug: hashtagSlug})
-        MERGE (u)-[r:${RelationshipTypes.INTERESTED_IN}]->(h)
+        MERGE (u)-[r:${RelationshipTypes.FOLLOWS_HASHTAG}]->(h)
         ON CREATE SET 
           r.interestLevel = $interestLevel,
           r.since = datetime()
@@ -280,6 +258,22 @@ class HashtagService extends BaseService {
         interestLevel,
         since: new Date().toISOString(),
       }
+    );
+  };
+
+  unfollowHashtags = async (
+    userId: string,
+    hashtagSlugs: string[] = []
+  ): Promise<void> => {
+    await this.writeToDB(
+      `
+        UNWIND $hashtagSlugs AS hashtagSlug
+        MATCH (u:${NodeLabels.User} {id: $userId})-[r:${RelationshipTypes.FOLLOWS_HASHTAG}]->(h:${NodeLabels.Hashtag} {slug: hashtagSlug})
+        DELETE r
+        SET h.popularity = CASE WHEN h.popularity > 0 THEN h.popularity - 1 ELSE 0 END
+        RETURN h, hashtagSlug
+      `,
+      { userId, hashtagSlugs }
     );
   };
 }

@@ -101,25 +101,19 @@ class TopicService extends BaseService {
     );
   };
 
-  removeUserInterest = async (
+
+  removeUserInterests = async (
     userId: string,
-    topicSlug: string
+    topicSlugs: string[],
   ): Promise<void> => {
     await this.writeToDB(
       `
-        MATCH (u:${NodeLabels.User} {id: $userId})-[r:${RelationshipTypes.INTERESTED_IN}]->(t:${NodeLabels.Topic} {slug: $topicId})
+        UNWIND $topicSlugs AS topicSlug
+        MATCH (u:${NodeLabels.User} {id: $userId})-[r:${RelationshipTypes.INTERESTED_IN}]->(t:${NodeLabels.Topic} {slug: topicSlug})
         DELETE r
-      `,
-      { userId, topicSlug }
-    );
-
-    // Update topic popularity
-    await this.writeToDB(
-      `
-        MATCH (t:${NodeLabels.Topic} {slug: $topicSlug})
         SET t.popularity = CASE WHEN t.popularity > 0 THEN t.popularity - 1 ELSE 0 END
       `,
-      { topicSlug }
+      { userId, topicSlugs }
     );
   };
 
