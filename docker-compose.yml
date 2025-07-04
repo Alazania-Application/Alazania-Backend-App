@@ -6,7 +6,7 @@ services:
     ports:
       - "${PORT}:${PORT}"
     env_file:
-      - ./src/config/.env
+      - .env
     environment:
       - DB_URI=bolt://neo4j:7687 
     depends_on:
