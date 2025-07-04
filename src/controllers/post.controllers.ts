@@ -131,7 +131,15 @@ class PostController {
     },
   ];
 
-  getPreSignedUrl = async (req: Request, res: Response, next: NextFunction) => {
+  getPreSignedUrl = [
+    ValidatorMiddleware.inputs([
+    body("fileName", "fileName string is required").isString(),
+    body("postId", "postId is required").exists().isString(),
+    body("sessionId", "sessionId is required").exists().isString(),
+    body("fileType", "fileType is required").exists().isString(),
+  ]),
+    
+    async (req: Request, res: Response, next: NextFunction) => {
     const userId = req?.user?.id;
     const { fileName, fileType, sessionId, postId } = req.body;
 
@@ -172,7 +180,7 @@ class PostController {
         key: tempS3Key,
       },
     });
-  };
+  }]
 
   initializePostSession = [
     async (req: Request, res: Response) => {
