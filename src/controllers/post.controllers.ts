@@ -22,46 +22,46 @@ import sharp from "sharp";
 import { v4 as uuidv4 } from "uuid";
 
 class PostController {
-  createPost = async (req: Request, res: Response) => {
-    const userId = req?.user?.id;
-    const postId = uuidv4();
-    req.body.postId = postId;
+  // createPost = async (req: Request, res: Response) => {
+  //   const userId = req?.user?.id;
+  //   const postId = uuidv4();
+  //   req.body.postId = postId;
 
-    const images = req.files as Express.Multer.File[];
+  //   const images = req.files as Express.Multer.File[];
 
-    if (images?.length) {
-      const compressedImages = await Promise.all(
-        images.map((file) =>
-          sharp(file.buffer)
-            .resize({ width: 1080 })
-            .webp({ quality: 80 })
-            .toBuffer()
-        )
-      );
+  //   if (images?.length) {
+  //     const compressedImages = await Promise.all(
+  //       images.map((file) =>
+  //         sharp(file.buffer)
+  //           .resize({ width: 1080 })
+  //           .webp({ quality: 80 })
+  //           .toBuffer()
+  //       )
+  //     );
 
-      const uploadUrls = await Promise.all(
-        compressedImages.map((compressed) => {
-          const filename = `${userId}/posts/${postId}/${uuidv4()}.webp`;
-          return uploadFile(compressed, filename);
-        })
-      );
+  //     const uploadUrls = await Promise.all(
+  //       compressedImages.map((compressed) => {
+  //         const filename = `${userId}/posts/${postId}/${uuidv4()}.webp`;
+  //         return uploadFile(compressed, filename);
+  //       })
+  //     );
 
-      req.body.images = [...uploadUrls];
-    }
+  //     req.body.images = [...uploadUrls];
+  //   }
 
-    const payload = {
-      ...req.body,
-      userId,
-    };
+  //   const payload = {
+  //     ...req.body,
+  //     userId,
+  //   };
 
-    const newPost = await postService.createPost(payload);
+  //   const newPost = await postService.createPost(payload);
 
-    res.status(HttpStatusCode.Created).json({
-      success: true,
-      data: newPost,
-      message: "Post created successfully",
-    });
-  };
+  //   res.status(HttpStatusCode.Created).json({
+  //     success: true,
+  //     data: newPost,
+  //     message: "Post created successfully",
+  //   });
+  // };
 
   publishPost = [
     ValidatorMiddleware.inputs([
@@ -80,11 +80,17 @@ class PostController {
         .isString(),
       body("postId", "postId is required").exists().isUUID(),
       body("sessionId", "sessionId is required").exists().isUUID(),
-      body("content", "content is required").exists().isUUID(),
+      body("caption", "caption is required")
+        .exists()
+        .isString()
+        .isLength({ max: 2200, min: 1 })
+        .withMessage(
+          "caption is required and must be a non-empty string between 1 and 2200 characters."
+        ),
     ]),
     async (req: Request, res: Response) => {
       const userId = req.user?.id;
-      const { postId, sessionId, content } = req.body;
+      const { postId, sessionId, caption } = req.body;
       const files = req?.body?.files as IPostFile[];
 
       const modifiedPostId = `${userId}-${postId}`;
@@ -134,7 +140,7 @@ class PostController {
         userId,
         files,
         postId,
-        content,
+        caption,
       });
 
       // You might also want to delete the entire temp session folder for good measure
@@ -331,9 +337,9 @@ class PostController {
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
       const postId = req.params?.postId;
-      const { comment: content } = req.body;
+      const { comment: message } = req.body;
 
-      const comment = await postService.commentOnPost(userId, postId, content);
+      const comment = await postService.commentOnPost(userId, postId, message);
 
       res.status(HttpStatusCode.Created).json({
         success: true,
@@ -352,13 +358,13 @@ class PostController {
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
       const postId = req.params?.postId;
-      const { comment: content, parentCommentId } = req.body;
+      const { comment, parentCommentId } = req.body;
 
       const reply = await postService.replyToComment(
         userId,
         postId,
         parentCommentId,
-        content
+        comment
       );
 
       res.status(HttpStatusCode.Created).json({
