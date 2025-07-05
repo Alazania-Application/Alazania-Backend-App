@@ -20,7 +20,7 @@ export interface Post extends BaseModel {
 export interface CreatePostInput {
   postId: string;
   userId: string;
-  content: string;
+  caption: string;
   files?: IPostFile[];
   topicSlug?: string;
 }

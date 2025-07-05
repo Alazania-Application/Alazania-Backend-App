@@ -10,15 +10,47 @@ import {
 import { deleteFolderByPrefix } from "@/middlewares/upload.middleware";
 
 class PostService extends BaseService {
+  private extractPost = (record: Record<any, any>, userId?: string) => {
+    const post = record.get("post");
+    const creator = record.get("creator");
+    const topic = record.get("topic");
+    const hashtags = record.get("hashtags") ?? []
+    const isLiked = record.get("liked");
+
+    if (post) {
+      return toNativeTypes({
+        id: post?.properties?.id,
+        caption: post?.properties?.caption,
+        createdAt: post?.properties?.createdAt,
+        files: post?.properties?.files || [],
+        engagement: {
+          likes: post?.properties?.likes,
+          comments: post?.properties?.comments,
+          shares: post?.properties?.shares,
+        },
+        creator: {
+          userId: creator?.properties?.id,
+          username: creator?.properties?.username,
+        },
+        topic: topic ? topic?.properties?.name : null,
+        hashtags,
+        isLiked: Boolean(isLiked),
+        isMyPost: Boolean(creator?.properties?.id == userId),
+      });
+    }
+
+    return null;
+  };
+
   async createPost(payload: CreatePostInput): Promise<Post | null> {
-    const hashtags = extractHashtags(payload.content);
+    const hashtags = extractHashtags(payload.caption);
 
     const now = new Date();
 
     const params = {
       postId: payload.postId,
       userId: payload.userId,
-      content: payload.content,
+      caption: payload.caption,
       files: payload?.files ?? [],
       createdAt: now.toISOString(),
       topicSlug: payload?.topicSlug || null,
@@ -34,7 +66,7 @@ class PostService extends BaseService {
 
         CREATE (p:${NodeLabels.Post} {
           id: $postId,
-          content: $content,
+          caption: $caption,
           files: $files,
           createdAt: datetime($createdAt),
           likes: 0,
@@ -71,7 +103,7 @@ class PostService extends BaseService {
 
     return toNativeTypes({
       id: postNode?.properties?.id,
-      content: postNode?.properties?.content,
+      caption: postNode?.properties?.caption,
       createdAt: postNode?.properties?.createdAt,
       files: postNode?.properties?.files ?? [],
       engagement: {
@@ -125,7 +157,7 @@ class PostService extends BaseService {
           p.sessionId = randomUUID(),
           p.postId = randomUUID()
         ON MATCH SET
-          p.content = "",
+          p.caption = "",
           p.files = []
 
 
@@ -192,36 +224,7 @@ class PostService extends BaseService {
       }
     );
 
-    return result.records.map((record) => {
-      const post = record.get("p");
-      const creator = record.get("creator");
-      const topic = record.get("topic");
-      const hashtags = record.get("hashtags");
-
-      if (post) {
-        return toNativeTypes({
-          id: post?.properties?.id,
-          content: post?.properties?.content,
-          createdAt: post?.properties?.createdAt,
-          engagement: {
-            likes: post?.properties?.likes,
-            comments: post?.properties?.comments,
-            shares: post?.properties?.shares,
-          },
-          creator: {
-            userId: creator?.properties?.id,
-            username: creator?.properties?.username,
-          },
-          topic: topic
-            ? {
-                topicId: topic?.properties?.topicId,
-                name: topic?.properties?.name,
-              }
-            : null,
-          hashtags: hashtags || [],
-        });
-      }
-    })[0];
+    return result.records.map((record) => this.extractPost(record, userId))[0];
   }
 
   async unlikePost(userId: string, postId: string) {
@@ -246,40 +249,11 @@ class PostService extends BaseService {
       }
     );
 
-    return result.records.map((record) => {
-      const post = record.get("p");
-      const creator = record.get("creator");
-      const topic = record.get("topic");
-      const hashtags = record.get("hashtags");
-
-      if (post) {
-        return toNativeTypes({
-          id: post?.properties?.id,
-          content: post?.properties?.content,
-          createdAt: post?.properties?.createdAt,
-          engagement: {
-            likes: post?.properties?.likes,
-            comments: post?.properties?.comments,
-            shares: post?.properties?.shares,
-          },
-          creator: {
-            userId: creator?.properties?.id,
-            username: creator?.properties?.username,
-          },
-          topic: topic
-            ? {
-                topicId: topic?.properties?.topicId,
-                name: topic?.properties?.name,
-              }
-            : null,
-          hashtags: hashtags || [],
-        });
-      }
-    })[0];
+    return result.records.map((record) => this.extractPost(record, userId))[0];
   }
 
   // Comments
-  async commentOnPost(userId: string, postId: string, content: string) {
+  async commentOnPost(userId: string, postId: string, comment: string) {
     const createdAt = new Date().toISOString();
 
     await this.writeToDB(
@@ -289,7 +263,7 @@ class PostService extends BaseService {
       
       CREATE (c:${NodeLabels.Comment} {
         id: randomUUID(),
-        content: $content,
+        comment: $comment,
         likes: 0,
         createdAt: datetime($createdAt),
         updatedAt: datetime($createdAt)
@@ -303,11 +277,11 @@ class PostService extends BaseService {
 
       SET p.comments = coalesce(p.comments, 0) + 1
       `,
-      { userId, postId, content, createdAt }
+      { userId, postId, comment, createdAt }
     );
 
     return {
-      content,
+      comment,
       createdAt: new Date(createdAt),
     };
   }
@@ -316,7 +290,7 @@ class PostService extends BaseService {
     userId: string,
     postId: string,
     parentCommentId: string,
-    content: string
+    comment: string
   ) {
     const createdAt = new Date().toISOString();
 
@@ -328,7 +302,7 @@ class PostService extends BaseService {
         
         CREATE (reply:${NodeLabels.Comment} {
           id: randomUUID(),
-          content: $content,
+          comment: $comment,
           createdAt: datetime($createdAt),
           updatedAt: datetime($createdAt)
         })
@@ -341,7 +315,7 @@ class PostService extends BaseService {
         SET p.comments = coalesce(p.comments, 0) + 1
         RETURN reply.id AS commentId
       `,
-      { userId, postId, parentCommentId, content, createdAt }
+      { userId, postId, parentCommentId, comment, createdAt }
     );
   }
 
@@ -378,7 +352,7 @@ class PostService extends BaseService {
       `
       MATCH (u:${NodeLabels.User} {id: $userId})<-[:${RelationshipTypes.COMMENTED_BY}]-(c:${NodeLabels.Comment} {id: $commentId})
       MATCH (p:${NodeLabels.Post})-[:${RelationshipTypes.HAS_COMMENT}]->(c)
-      SET c.content = '[deleted]', c.deleted = true, p.comments = CASE WHEN p.comments > 0 THEN p.comments - 1 ELSE 0 END
+      SET c.comment = '[deleted]', c.deleted = true, p.comments = CASE WHEN p.comments > 0 THEN p.comments - 1 ELSE 0 END
       `,
       { userId, commentId }
     );
@@ -503,34 +477,7 @@ class PostService extends BaseService {
 
     return result.records
       .map((record: any) => {
-        const post = record.get("post");
-        const creator = record.get("creator");
-        const topic = record.get("topic");
-        const hashtags = record.get("hashtags");
-        const isLiked = record.get("liked");
-
-        if (post) {
-          return toNativeTypes({
-            id: post?.properties?.id,
-            content: post?.properties?.content,
-            createdAt: post?.properties?.createdAt,
-            files: post?.properties?.files || [],
-            engagement: {
-              likes: post?.properties?.likes,
-              comments: post?.properties?.comments,
-              shares: post?.properties?.shares,
-            },
-            creator: {
-              userId: creator?.properties?.id,
-              username: creator?.properties?.username,
-            },
-            topic: topic ? topic?.properties?.name : null,
-            hashtags: hashtags || [],
-            isLiked: Boolean(isLiked),
-            isMyPost: Boolean(creator?.properties?.id == userId),
-          });
-        }
-        return null; // Or handle cases where post might be null
+        return this.extractPost(record, userId);
       })
       .filter(Boolean); // Filter out any null entries if they occurred
   }
@@ -577,39 +524,7 @@ class PostService extends BaseService {
       { userId, ...params }
     );
 
-    return result.records.map((record) => {
-      const post = record.get("post");
-      const creator = record.get("creator");
-      const topic = record.get("topic");
-      const hashtags = record.get("hashtags");
-      const isLiked = record.get("liked");
-
-      if (post) {
-        return toNativeTypes({
-          id: post?.properties?.id,
-          content: post?.properties?.content,
-          createdAt: post?.properties?.createdAt,
-          images: post?.properties?.images || [],
-          engagement: {
-            likes: post?.properties?.likes,
-            comments: post?.properties?.comments,
-            shares: post?.properties?.shares,
-          },
-          creator: {
-            userId: creator?.properties?.id,
-            username: creator?.properties?.username,
-          },
-          topic: topic
-            ? {
-                topicId: topic?.properties?.topicId,
-                name: topic?.properties?.name,
-              }
-            : null,
-          hashtags: hashtags || [],
-          isLiked: Boolean(isLiked),
-        });
-      }
-    });
+    return result.records.map((record) => this.extractPost(record,userId));
   }
 
   async getPersonalizedFeed(
@@ -655,39 +570,7 @@ class PostService extends BaseService {
       { userId, ...params }
     );
 
-    return result.records.map((record) => {
-      const post = record.get("post");
-      const creator = record.get("creator");
-      const topic = record.get("topic");
-      const hashtags = record.get("hashtags");
-      const isLiked = record.get("liked");
-
-      if (post) {
-        return toNativeTypes({
-          id: post?.properties?.id,
-          content: post?.properties?.content,
-          createdAt: post?.properties?.createdAt,
-          images: post?.properties?.images || [],
-          engagement: {
-            likes: post?.properties?.likes,
-            comments: post?.properties?.comments,
-            shares: post?.properties?.shares,
-          },
-          creator: {
-            userId: creator?.properties?.id,
-            username: creator?.properties?.username,
-          },
-          topic: topic
-            ? {
-                topicId: topic?.properties?.topicId,
-                name: topic?.properties?.name,
-              }
-            : null,
-          hashtags: hashtags || [],
-          isLiked: Boolean(isLiked),
-        });
-      }
-    });
+    return result.records.map((record) => this.extractPost(record,userId));;
   }
 
   async sharePost(userId: string, postId: string): Promise<void> {
