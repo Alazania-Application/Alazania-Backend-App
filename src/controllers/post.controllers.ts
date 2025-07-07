@@ -14,7 +14,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { HttpStatusCode } from "axios";
-import { NextFunction, Request, Response } from "express";
+import {  Request, Response } from "express";
 import { body, param } from "express-validator";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
@@ -76,7 +76,6 @@ class PostController {
         .if(body("files").exists())
         .exists()
         .isString(),
-      body("postId", "postId is required").exists().isUUID(),
       body("sessionId", "sessionId is required").exists().isUUID(),
       body("caption", "caption is required")
         .exists()
@@ -88,12 +87,12 @@ class PostController {
     ]),
     async (req: Request, res: Response) => {
       const userId = req.user?.id;
-      const { postId, sessionId, caption } = req.body;
+      const { sessionId, caption } = req.body;
       const files = req?.body?.files as IPostFile[];
 
-      const modifiedPostId = `${userId}-${postId}`;
-      const modifiedSessionId = `${userId}-${sessionId}`;
-      const sessionPrefix = `${userId}/temp-uploads/${modifiedSessionId}`;
+      const sessionPrefix = `${userId}/temp-uploads/${sessionId}`;
+
+      await postService.validatePostAndSessionIds(userId, sessionId)
 
       await Promise.all(
         files.map(async (file) => {
@@ -103,11 +102,11 @@ class PostController {
             console.warn(
               `Attempted to move a file from an invalid key: ${tempKey}`
             );
-            return; // Skip this key to prevent malicious moves
+            throw new Error("An unexpected error occurred, Please create a new post"); // throw an error for this key to prevent malicious moves
           }
 
           const fileName = path.basename(tempKey);
-          const permanentKey = `${userId}/posts/${modifiedPostId}/${fileName}`; // The final destination
+          const permanentKey = `${userId}/posts/${sessionId}/${fileName}`; // The final destination
 
           console.log(`Copying ${tempKey} to ${permanentKey}`);
 
@@ -137,7 +136,7 @@ class PostController {
       const newPost = await postService.createPost({
         userId,
         files,
-        postId,
+        postId: sessionId,
         caption,
       });
 
@@ -157,28 +156,25 @@ class PostController {
   getPreSignedUrl = [
     ValidatorMiddleware.inputs([
       body("fileName", "fileName string is required").isString(),
-      body("postId", "postId is required").exists().isString(),
       body("sessionId", "sessionId is required").exists().isString(),
       body("fileType", "fileType is required").exists().isString(),
     ]),
 
-    async (req: Request, res: Response, next: NextFunction) => {
+    async (req: Request, res: Response ) => {
       const userId = req?.user?.id;
-      const { fileName, fileType, sessionId, postId } = req.body;
+      const { fileName, fileType, sessionId } = req.body;
 
-      if (!fileName || !fileType || !userId || !sessionId || !postId) {
+      if (!fileName || !fileType || !userId || !sessionId) {
         throw new ErrorResponse(
-          "fileName, fileType, sessionId, postId, and userId are required.",
+          "fileName, fileType, sessionId, and userId are required.",
           HttpStatusCode.BadRequest
         );
       }
 
-      const modifiedSessionId = `${userId}-${sessionId}`;
-
       // Generate a unique filename to prevent collisions and duplicates in the S3 bucket
       const fileExtension = path.extname(fileName);
-      const uniqueFileName = `posts/${uuidv4()}${fileExtension}`;
-      const tempS3Key = `${userId}/temp-uploads/${modifiedSessionId}/${uniqueFileName}`;
+      const uniqueFileName = `${uuidv4()}${fileExtension}`;
+      const tempS3Key = `${userId}/temp-uploads/${sessionId}/${uniqueFileName}`;
 
       const command = new PutObjectCommand({
         Bucket: SPACES_BUCKET,
@@ -188,7 +184,7 @@ class PostController {
         Metadata: {
           "x-amz-meta-original-name": fileName,
           "x-amz-meta-user-id": userId,
-          "x-amz-meta-session-id": modifiedSessionId,
+          "x-amz-meta-session-id": sessionId,
         },
       });
 

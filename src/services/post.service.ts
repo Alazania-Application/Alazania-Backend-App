@@ -2,6 +2,7 @@ import { CreatePostInput, IUser, Post } from "@/models";
 import BaseService from "./base.service";
 import { NodeLabels, RelationshipTypes } from "@/enums";
 import {
+  ErrorResponse,
   extractHashtags,
   IPagination,
   IReadQueryParams,
@@ -9,6 +10,7 @@ import {
   toNativeTypes,
 } from "@/utils";
 import { deleteFolderByPrefix } from "@/middlewares/upload.middleware";
+import { HttpStatusCode } from "axios";
 
 class PostService extends BaseService {
   private extractPost = (record: Record<any, any>, userId?: string) => {
@@ -17,12 +19,7 @@ class PostService extends BaseService {
     const topic = record.get("topic");
     const hashtags = record.get("hashtags")?.properties ?? [];
     const liked = Boolean(!!record.get("liked"));
-    const files =
-      record.get("files")?.properties?.map((file: any) => ({
-        key: file.properties.key,
-        url: file.properties.url,
-        fileType: file.properties.fileType,
-      })) ?? [];
+    const files = record.get("files")?.map((record: any) => record?.properties);
 
     if (post) {
       return toNativeTypes({
@@ -48,6 +45,86 @@ class PostService extends BaseService {
 
     return null;
   };
+
+  async validatePostAndSessionIds(
+    userId: string,
+    sessionId: string
+  ) {
+    const results = await this.readFromDB(
+      `
+        MATCH (session:${NodeLabels.PostSession} {userId: $userId, sessionId: $sessionId})
+        RETURN session LIMIT 1
+        `,
+      { sessionId, userId }
+    );
+
+    if (!results.records?.length) {
+      throw new ErrorResponse(
+        "An error occurred, please create a new post",
+        HttpStatusCode.BadRequest
+      );
+    }
+  }
+
+  async initializePostSession(userId: string): Promise<any> {
+    const params = {
+      userId,
+    };
+
+    // Clean up temp uploads
+    const sessionPrefix = `${userId}/temp-uploads/`;
+    await deleteFolderByPrefix(sessionPrefix);
+
+    // const sessionResult = await this.readFromDB(
+    //   `
+    //   MATCH (u:${NodeLabels.User} {id: $userId})-[r:${RelationshipTypes.INITIALIZED_POST_SESSION}]->(session:${NodeLabels.PostSession} {userId: $userId})
+    //   RETURN session.sessionId
+    // `,
+    //   params
+    // ); // Make sure 'params' is passed to your readFromDB function
+
+    // let sessionId = null;
+
+    // // Check if any records were returned
+    // if (sessionResult.records.length > 0) {
+    //   // Get the first record (assuming you expect at most one session per user for this query)
+    //   const record = sessionResult.records[0];
+
+    //   // Extract the sessionId using the column name 'session.sessionId'
+    //   // Alternatively, you could use record.get(0) if it's the first and only returned item
+    //   sessionId = record.get("session.sessionId");
+
+    //   if (sessionId) {
+    //     const sessionPrefix = `${userId}/temp-uploads/`;
+    //     await deleteFolderByPrefix(sessionPrefix);
+    //   }
+    // }
+
+    // initialize the post session
+    const result = await this.writeToDB(
+      `
+        MATCH (u:${NodeLabels.User} {id: $userId})
+        MERGE (p:${NodeLabels.PostSession} {userId: $userId})
+        ON CREATE SET
+          p.sessionId = randomUUID()
+        ON MATCH SET
+          p.caption = "",
+          p.files = []
+
+
+        MERGE (u)-[r:${RelationshipTypes.INITIALIZED_POST_SESSION}]->(p)
+
+        WITH p
+        CALL apoc.ttl.expireIn(p, 1, 'd')
+        RETURN p
+      `,
+      params
+    );
+
+    const postNode = result.records[0].get("p")?.properties;
+
+    return toNativeTypes(postNode);
+  }
 
   async createPost(payload: CreatePostInput): Promise<Post | null> {
     const hashtags = extractHashtags(payload.caption);
@@ -137,67 +214,6 @@ class PostService extends BaseService {
     }) as Post;
   }
 
-  async initializePostSession(userId: string): Promise<any> {
-    const params = {
-      userId,
-    };
-
-    // Clean up temp uploads
-    const sessionPrefix = `${userId}/temp-uploads/`;
-    await deleteFolderByPrefix(sessionPrefix);
-
-    // const sessionResult = await this.readFromDB(
-    //   `
-    //   MATCH (u:${NodeLabels.User} {id: $userId})-[r:${RelationshipTypes.INITIALIZED_POST_SESSION}]->(session:${NodeLabels.PostSession} {userId: $userId})
-    //   RETURN session.sessionId
-    // `,
-    //   params
-    // ); // Make sure 'params' is passed to your readFromDB function
-
-    // let sessionId = null;
-
-    // // Check if any records were returned
-    // if (sessionResult.records.length > 0) {
-    //   // Get the first record (assuming you expect at most one session per user for this query)
-    //   const record = sessionResult.records[0];
-
-    //   // Extract the sessionId using the column name 'session.sessionId'
-    //   // Alternatively, you could use record.get(0) if it's the first and only returned item
-    //   sessionId = record.get("session.sessionId");
-
-    //   if (sessionId) {
-    //     const sessionPrefix = `${userId}/temp-uploads/`;
-    //     await deleteFolderByPrefix(sessionPrefix);
-    //   }
-    // }
-
-    // initialize the post session
-    const result = await this.writeToDB(
-      `
-        MATCH (u:${NodeLabels.User} {id: $userId})
-        MERGE (p:${NodeLabels.PostSession} {userId: $userId})
-        ON CREATE SET
-          p.sessionId = randomUUID(),
-          p.postId = randomUUID()
-        ON MATCH SET
-          p.caption = "",
-          p.files = []
-
-
-        MERGE (u)-[r:${RelationshipTypes.INITIALIZED_POST_SESSION}]->(p)
-
-        WITH p
-        CALL apoc.ttl.expireIn(p, 1, 'd')
-        RETURN p
-      `,
-      params
-    );
-
-    const postNode = result.records[0].get("p")?.properties;
-
-    return toNativeTypes(postNode);
-  }
-
   // Likes
   async getPostLikes(postId: string) {
     const result = await this.readFromDB(
@@ -235,10 +251,12 @@ class PostService extends BaseService {
         MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(p)
         OPTIONAL MATCH (p)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
         OPTIONAL MATCH (p)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
+        OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(f:${NodeLabels.File})
 
-        WITH p, creator, topic, COLLECT(hashtag.name) as hashtags
+        WITH p, creator, topic, COLLECT(hashtag.name) as hashtags, COLLECT(f) AS files,  r
+        ORDER BY r.order
 
-        RETURN p, creator, topic, hashtags
+        RETURN p, creator, topic, hashtags, files
       `,
       {
         userId,
@@ -261,10 +279,12 @@ class PostService extends BaseService {
         MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(p)
         OPTIONAL MATCH (p)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
         OPTIONAL MATCH (p)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
+        OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(f:${NodeLabels.File})
 
-        WITH p, creator, topic, COLLECT(hashtag.name) as hashtags
+        WITH p, creator, topic, COLLECT(hashtag.name) as hashtags, COLLECT(f) AS files,  r
+        ORDER BY r.order
 
-        RETURN p, creator, topic, hashtags
+        RETURN p, creator, topic, hashtags, files
       `,
       {
         userId,
@@ -452,14 +472,11 @@ class PostService extends BaseService {
       
       WITH post, creator, topic, liked, COLLECT(DISTINCT hashtag.name) AS hashtags, relevanceScore
 
-      OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(files:${NodeLabels.File})
-      WITH post, creator, topic, liked, hashtags, relevanceScore, files, r
+      OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(f:${NodeLabels.File})
+      WITH post, creator, topic, liked, hashtags, relevanceScore, COLLECT(f) AS files, r
       ORDER BY r.order
 
-      WITH post, creator, topic, liked, hashtags, relevanceScore,
-          COLLECT(files) AS orderedFiles
-
-      RETURN post, creator, topic, liked, hashtags, relevanceScore, orderedFiles AS files
+      RETURN post, creator, topic, liked, hashtags, relevanceScore, files
       ORDER BY relevanceScore DESC, post.createdAt DESC
       SKIP $skip
       LIMIT $limit
@@ -495,14 +512,11 @@ class PostService extends BaseService {
                 ELSE 0
               END as relevanceScore
 
-        OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(files:${NodeLabels.File})
-        WITH post, creator, topic, liked, hashtags, relevanceScore, files, r
+        OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(f:${NodeLabels.File})
+        WITH post, creator, topic, liked, hashtags, relevanceScore, COLLECT(f) AS files, r
         ORDER BY r.order
 
-        WITH post, creator, topic, liked, hashtags, relevanceScore,
-            COLLECT(files) AS orderedFiles
-
-        RETURN post, creator, topic, liked, hashtags, relevanceScore, orderedFiles AS files
+        RETURN post, creator, topic, liked, hashtags, relevanceScore, files
         ORDER BY relevanceScore DESC, post.createdAt DESC
         SKIP $skip
         LIMIT $limit
@@ -544,11 +558,9 @@ class PostService extends BaseService {
       OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
       OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
       OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(files:${NodeLabels.File})
-      WITH post, creator, topic, liked, COLLECT(DISTINCT hashtag.name) AS hashtags, files, r
+      WITH post, creator, topic, liked, COLLECT(DISTINCT hashtag.name) AS hashtags, COLLECT(files) AS orderedFiles, r
       ORDER BY r.order
       
-      WITH post, creator, topic, liked, hashtags,
-          COLLECT(files) AS orderedFiles
 
       RETURN post, creator, topic, liked, hashtags, orderedFiles AS files
       ORDER BY post.createdAt DESC
@@ -571,7 +583,6 @@ class PostService extends BaseService {
 
     return { posts, pagination };
   }
-
 
   async sharePost(userId: string, postId: string): Promise<void> {
     await this.writeToDB(

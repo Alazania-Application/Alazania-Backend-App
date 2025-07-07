@@ -180,6 +180,7 @@ class HashtagService extends BaseService {
       return {
         slug: hashtagNode?.slug,
         name: hashtagNode?.name,
+        popularity: hashtagNode?.popularity,
       };
     });
   };
@@ -201,6 +202,7 @@ class HashtagService extends BaseService {
       return {
         slug: hashtagNode?.slug,
         name: hashtagNode?.name,
+        popularity: hashtagNode?.popularity,
       };
     });
   };
@@ -221,8 +223,12 @@ class HashtagService extends BaseService {
     );
 
     return result.records.map((record) => {
-      const hashtag = record.get("hashtag");
-      return hashtag;
+      const hashtagNode = record.get("h")?.properties as Hashtag;
+      return {
+        slug: hashtagNode?.slug,
+        name: hashtagNode?.name,
+        popularity: hashtagNode?.popularity,
+      };
     });
   };
 
