@@ -12,6 +12,7 @@ export interface IUser extends BaseModel {
   phone?: string;
   avatar?: string;
   username?: string;
+  bio?: string;
 
   isVerified?: boolean;
   isEmailVerified?: boolean;

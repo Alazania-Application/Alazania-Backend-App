@@ -24,6 +24,18 @@ postRouter.get(
 );
 
 postRouter.get(
+  "/user/:id",
+  authMiddleWare.protectRoute,
+  postController.getUserPosts
+);
+
+postRouter.get(
+  "/my-posts",
+  authMiddleWare.protectRoute,
+  postController.getMyPosts
+);
+
+postRouter.get(
   "/following",
   authMiddleWare.protectRoute,
   postController.getFollowingPosts
@@ -35,6 +47,11 @@ postRouter.get(
   postController.getSpotlightPosts
 );
 
+postRouter.get(
+  "/",
+  authMiddleWare.protectRoute,
+  postController.getSpotlightPosts
+);
 
 postRouter.get(
   "/:postId/likes",
@@ -77,5 +94,3 @@ postRouter.post(
   authMiddleWare.protectRoute,
   postController.replyToComment
 );
-
-

@@ -157,6 +157,11 @@ export interface IReadQueryParams {
   limit?: number | Integer;
   skip?: number | Integer;
 }
+export interface IPagination {
+  page: number;
+  limit: number;
+  total: number;
+}
 
 export const getPaginationFilters = ({
   sort = "DESC",
@@ -193,7 +198,10 @@ export const isIdToken = (token: string) => {
   return token.split(".").length === 3;
 };
 
-
 export const extractHashtags = (text: string) => {
-  return [...new Set((text.match(/#\w+/g) || []).map(tag => tag.slice(1).toLowerCase()))];
+  return [
+    ...new Set(
+      (text.match(/#\w+/g) || []).map((tag) => tag.slice(1).toLowerCase())
+    ),
+  ];
 };

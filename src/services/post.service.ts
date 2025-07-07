@@ -3,6 +3,7 @@ import BaseService from "./base.service";
 import { NodeLabels, RelationshipTypes } from "@/enums";
 import {
   extractHashtags,
+  IPagination,
   IReadQueryParams,
   toDTO,
   toNativeTypes,
@@ -14,19 +15,25 @@ class PostService extends BaseService {
     const post = record.get("post");
     const creator = record.get("creator");
     const topic = record.get("topic");
-    const hashtags = record.get("hashtags") ?? []
-    const isLiked = record.get("liked");
+    const hashtags = record.get("hashtags")?.properties ?? [];
+    const liked = Boolean(!!record.get("liked"));
+    const files =
+      record.get("files")?.properties?.map((file: any) => ({
+        key: file.properties.key,
+        url: file.properties.url,
+        fileType: file.properties.fileType,
+      })) ?? [];
 
     if (post) {
       return toNativeTypes({
         id: post?.properties?.id,
         caption: post?.properties?.caption,
         createdAt: post?.properties?.createdAt,
-        files: post?.properties?.files || [],
+        files,
         engagement: {
-          likes: post?.properties?.likes,
-          comments: post?.properties?.comments,
-          shares: post?.properties?.shares,
+          likes: post?.properties?.likes?.toInt(),
+          comments: post?.properties?.comments?.toInt(),
+          shares: post?.properties?.shares?.toInt(),
         },
         creator: {
           userId: creator?.properties?.id,
@@ -34,7 +41,7 @@ class PostService extends BaseService {
         },
         topic: topic ? topic?.properties?.name : null,
         hashtags,
-        isLiked: Boolean(isLiked),
+        liked,
         isMyPost: Boolean(creator?.properties?.id == userId),
       });
     }
@@ -61,55 +68,71 @@ class PostService extends BaseService {
     const result = await this.writeToDB(
       `
         MATCH (u:${NodeLabels.User} {id: $userId})
-        OPTIONAL MATCH (t:${NodeLabels.Topic} {slug: $topicSlug})
-        WITH u, t
 
         CREATE (p:${NodeLabels.Post} {
           id: $postId,
           caption: $caption,
-          files: $files,
+          userId: $userId,
           createdAt: datetime($createdAt),
           likes: 0,
           comments: 0,
           shares: 0
         })
 
+        // // Create user - post relationship
         MERGE (u)-[:${RelationshipTypes.POSTED}]->(p)
-        
-        // Optional link to topic
+
+        WITH p
+
+        // // Optional link to topic
+        OPTIONAL MATCH (t:${NodeLabels.Topic} {slug: $topicSlug})
         FOREACH (_ IN CASE WHEN t IS NOT NULL THEN [1] ELSE [] END |
           MERGE (p)-[:${RelationshipTypes.BELONGS_TO}]->(t)
         )
 
-        WITH p
 
-        UNWIND COALESCE($hashtags, []) AS hashtag
+        WITH p, $files AS files
+
+        // // Create new file nodes
+        UNWIND range(0, size(COALESCE(files, []))-1) AS idx
+        WITH p, files[idx] AS file, idx
+        CREATE (f:${NodeLabels.File})
+        SET f = file
+
+        // // Create post <-> file relationship
+        MERGE (p)-[r:${RelationshipTypes.HAS_FILE}]->(f)
+        SET r.order = idx
+        
+        WITH p, $hashtags AS hashtags
+
+        UNWIND COALESCE(hashtags, []) AS hashtag
         MERGE (h:${NodeLabels.Hashtag} {name: hashtag})
         ON CREATE SET 
               h.popularity = 0,
               h.lastUsedAt = datetime($createdAt)
 
+        // // Create post <-> hashtags relationship
         MERGE (p)-[:${RelationshipTypes.HAS_HASHTAG}]->(h)
         SET 
           h.popularity = h.popularity + 1,
           h.lastUsedAt = datetime($createdAt)
-
+        
         RETURN p
       `,
       params
     );
 
-    const postNode = result.records[0].get("p");
+    const postNode = result.records[0]?.get("p");
 
     return toNativeTypes({
       id: postNode?.properties?.id,
       caption: postNode?.properties?.caption,
       createdAt: postNode?.properties?.createdAt,
-      files: postNode?.properties?.files ?? [],
+      files: params?.files ?? [],
       engagement: {
-        likes: postNode?.properties?.likes,
-        comments: postNode?.properties?.comments,
-        shares: postNode?.properties?.shares,
+        likes: postNode?.properties?.likes ?? 0,
+        comments: postNode?.properties?.comments ?? 0,
+        shares: postNode?.properties?.shares ?? 0,
       },
     }) as Post;
   }
@@ -389,7 +412,7 @@ class PostService extends BaseService {
     userId: string,
     params: IReadQueryParams = {},
     type: "following" | "spotlight"
-  ): Promise<any[]> {
+  ): Promise<{ posts: any[]; pagination: IPagination }> {
     const { skip = 0, limit = 10 } = params; // Default skip and limit
 
     let cypherQuery: string;
@@ -426,10 +449,17 @@ class PostService extends BaseService {
       OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
       OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
       OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
-
+      
       WITH post, creator, topic, liked, COLLECT(DISTINCT hashtag.name) AS hashtags, relevanceScore
 
-      RETURN post, creator, topic, liked, hashtags, relevanceScore
+      OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(files:${NodeLabels.File})
+      WITH post, creator, topic, liked, hashtags, relevanceScore, files, r
+      ORDER BY r.order
+
+      WITH post, creator, topic, liked, hashtags, relevanceScore,
+          COLLECT(files) AS orderedFiles
+
+      RETURN post, creator, topic, liked, hashtags, relevanceScore, orderedFiles AS files
       ORDER BY relevanceScore DESC, post.createdAt DESC
       SKIP $skip
       LIMIT $limit
@@ -464,114 +494,84 @@ class PostService extends BaseService {
                 WHEN post IN hashtagPosts THEN 1
                 ELSE 0
               END as relevanceScore
-        
-        RETURN post, creator, topic, liked, hashtags, relevanceScore
-        ORDER BY relevanceScore DESC , post.createdAt DESC
+
+        OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(files:${NodeLabels.File})
+        WITH post, creator, topic, liked, hashtags, relevanceScore, files, r
+        ORDER BY r.order
+
+        WITH post, creator, topic, liked, hashtags, relevanceScore,
+            COLLECT(files) AS orderedFiles
+
+        RETURN post, creator, topic, liked, hashtags, relevanceScore, orderedFiles AS files
+        ORDER BY relevanceScore DESC, post.createdAt DESC
         SKIP $skip
         LIMIT $limit
       `;
       queryParams = { userId, skip, limit };
     }
 
-    const result = await this.readFromDB(cypherQuery, queryParams);
+    const { result, pagination } = await this.readFromDB(
+      cypherQuery,
+      queryParams,
+      true
+    );
 
-    return result.records
+    const posts = result.records
       .map((record: any) => {
         return this.extractPost(record, userId);
       })
       .filter(Boolean); // Filter out any null entries if they occurred
+
+    return { posts, pagination };
   }
 
-  async getFollowingFeed(
+  // Get user posts
+  async getUserPosts(
     userId: string,
     params: IReadQueryParams = {}
-  ): Promise<any[]> {
-    const result = await this.readFromDB(
-      `
-        MATCH (u:${NodeLabels.User} {id: $userId})-[:${RelationshipTypes.POSTED}]->(myPost:${NodeLabels.Post})
-        OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS}]->(followedUser:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(followedPost:${NodeLabels.Post})
-        OPTIONAL MATCH (u)-[:${RelationshipTypes.INTERESTED_IN}]->(topic:${NodeLabels.Topic})<-[:${RelationshipTypes.BELONGS_TO}]-(topicPost:${NodeLabels.Post})
-        OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS}]->(hashtag:${NodeLabels.Hashtag})<-[:${RelationshipTypes.HAS_HASHTAG}]-(hashtagPost:${NodeLabels.Post})
+  ): Promise<{ posts: any[]; pagination: IPagination }> {
+    const { skip = 0, limit = 10 } = params; // Default skip and limit
 
-        WITH u, 
-             COLLECT(DISTINCT myPost) as myPosts,
-             COLLECT(DISTINCT followedPost) as followedPosts,
-             COLLECT(DISTINCT topicPost) as topicPosts,
-             COLLECT(DISTINCT hashtagPost) as hashtagPosts
-        
-        UNWIND (followedPosts + topicPosts + hashtagPosts + myPosts) as post
-        WITH u, post, followedPosts, topicPosts, hashtagPosts, myPosts
-        WHERE post IS NOT NULL
-        
-        MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(post)
-        OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
-        OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
-        OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
-        
-        WITH post, creator, topic, liked, COLLECT(hashtag.name) as hashtags,
-             CASE 
-               WHEN post IN followedPosts THEN 3
-               WHEN post IN topicPosts THEN 2
-               WHEN post IN hashtagPosts THEN 1
-               ELSE 0
-             END as relevanceScore
-        
-        RETURN post, creator, topic, liked, hashtags, relevanceScore
-        ORDER BY relevanceScore DESC , post.createdAt DESC
-        SKIP $skip
-        LIMIT $limit
-      `,
-      { userId, ...params }
+    let cypherQuery: string;
+    let queryParams: Record<string, any>;
+
+    cypherQuery = `
+      MATCH (post: ${NodeLabels.Post})<-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User} {id: $userId})
+
+      WITH post, creator
+
+      OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
+      OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
+      OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
+      OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(files:${NodeLabels.File})
+      WITH post, creator, topic, liked, COLLECT(DISTINCT hashtag.name) AS hashtags, files, r
+      ORDER BY r.order
+      
+      WITH post, creator, topic, liked, hashtags,
+          COLLECT(files) AS orderedFiles
+
+      RETURN post, creator, topic, liked, hashtags, orderedFiles AS files
+      ORDER BY post.createdAt DESC
+      SKIP $skip
+      LIMIT $limit
+    `;
+    queryParams = { userId, skip, limit };
+
+    const { result, pagination } = await this.readFromDB(
+      cypherQuery,
+      queryParams,
+      true
     );
 
-    return result.records.map((record) => this.extractPost(record,userId));
+    const posts = result.records
+      .map((record: any) => {
+        return this.extractPost(record, userId);
+      })
+      .filter(Boolean); // Filter out any null entries if they occurred
+
+    return { posts, pagination };
   }
 
-  async getPersonalizedFeed(
-    userId: string,
-    params: IReadQueryParams = {}
-  ): Promise<any[]> {
-    const result = await this.readFromDB(
-      `
-        MATCH (u:${NodeLabels.User} {id: $userId})
-
-        OPTIONAL MATCH (u)-[interest:${RelationshipTypes.INTERESTED_IN}]->(topic:${NodeLabels.Topic})<-[:${RelationshipTypes.BELONGS_TO}]-(topicPost:${NodeLabels.Post})
-        OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS}]->(hashtag:${NodeLabels.Hashtag})<-[:${RelationshipTypes.HAS_HASHTAG}]-(hashtagPost:${NodeLabels.Post})
-        
-        WITH u, 
-            COLLECT(DISTINCT { post: topicPost, topicScore: interest.interestLevel }) AS topicResults,
-            COLLECT(DISTINCT hashtagPost) as hashtagPosts
-        
-        // Flatten posts into one list, adding default scores where missing
-        UNWIND topicResults AS topicResult
-        WITH u, topicResult.post AS post, topicResult.topicScore AS topicScore, hashtagPosts
-
-        WITH u, post, 
-            COALESCE(topicScore, 0) AS topicScore,
-            CASE WHEN post IN hashtagPosts THEN 1 ELSE 0 END AS hashtagScore
-
-        // Calculate weighted relevance
-        WITH u, post, topicScore, hashtagScore,
-            topicScore * 0.7 + hashtagScore * 0.3 AS relevanceScore
-
-        // Get additional data for display
-        OPTIONAL MATCH (post)<-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User})
-        OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
-        OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
-        OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
-
-        WITH post, creator, topic, liked, COLLECT(DISTINCT hashtag.name) AS hashtags, relevanceScore
-
-        RETURN post, creator, topic, liked, hashtags, relevanceScore
-        ORDER BY relevanceScore DESC, post.createdAt DESC
-        SKIP $skip
-        LIMIT $limit
-      `,
-      { userId, ...params }
-    );
-
-    return result.records.map((record) => this.extractPost(record,userId));;
-  }
 
   async sharePost(userId: string, postId: string): Promise<void> {
     await this.writeToDB(

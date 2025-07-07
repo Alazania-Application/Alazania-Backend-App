@@ -51,9 +51,17 @@ class UserController {
         .isString()
         .isLength({ min: 3, max: 20 })
         .matches(/^[A-Za-z][A-Za-z0-9_\-\.]*$/),
+      body("bio", "bio must be between 0-125 characters")
+        .optional()
+        .isString()
+        .isLength({ min: 0, max: 125 }),
     ]),
     async (req: Request, res: Response) => {
-      const user = await userService.updateUser(req?.user?.id, req.body);
+      const updates = { ...req.body };
+      if ("lastLogin" in updates) {
+        delete updates["lastLogin"];
+      }
+      const user = await userService.updateUser(req?.user?.id, updates);
 
       res.status(HttpStatusCode.Ok).json({
         success: true,

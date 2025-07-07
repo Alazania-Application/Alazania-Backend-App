@@ -2,7 +2,6 @@ import { SPACES_BUCKET } from "@/config";
 import {
   deleteFolderByPrefix,
   s3Config,
-  uploadFile,
 } from "@/middlewares/upload.middleware";
 import ValidatorMiddleware from "@/middlewares/validator.middleware";
 import { IPostFile } from "@/models";
@@ -18,7 +17,6 @@ import { HttpStatusCode } from "axios";
 import { NextFunction, Request, Response } from "express";
 import { body, param } from "express-validator";
 import path from "path";
-import sharp from "sharp";
 import { v4 as uuidv4 } from "uuid";
 
 class PostController {
@@ -95,7 +93,7 @@ class PostController {
 
       const modifiedPostId = `${userId}-${postId}`;
       const modifiedSessionId = `${userId}-${sessionId}`;
-      const sessionPrefix = `${userId}/temp-uploads/${modifiedSessionId}/`;
+      const sessionPrefix = `${userId}/temp-uploads/${modifiedSessionId}`;
 
       await Promise.all(
         files.map(async (file) => {
@@ -179,7 +177,7 @@ class PostController {
 
       // Generate a unique filename to prevent collisions and duplicates in the S3 bucket
       const fileExtension = path.extname(fileName);
-      const uniqueFileName = `/posts/${uuidv4()}${fileExtension}`;
+      const uniqueFileName = `posts/${uuidv4()}${fileExtension}`;
       const tempS3Key = `${userId}/temp-uploads/${modifiedSessionId}/${uniqueFileName}`;
 
       const command = new PutObjectCommand({
@@ -221,14 +219,59 @@ class PostController {
     },
   ];
 
-  getFollowingPosts = async (req: Request, res: Response) => {
+  getMyPosts = async (req: Request, res: Response) => {
     const userId = req?.user?.id;
 
-    const data = await postService.getFeed(userId, req.query, "following");
+    const { posts: data, pagination } = await postService.getUserPosts(
+      userId,
+      req.query
+    );
 
     res.status(HttpStatusCode.Ok).json({
       success: true,
       data,
+      pagination,
+      message: "Posts fetched successfully",
+    });
+  };
+
+  getUserPosts = [
+    ValidatorMiddleware.inputs([
+      param("id", "user ID is required")
+        .exists()
+        .isUUID()
+        .withMessage("Invalid user ID"),
+    ]),
+    async (req: Request, res: Response) => {
+      const userId = req?.params?.id;
+
+      const { posts: data, pagination } = await postService.getUserPosts(
+        userId,
+        req.query
+      );
+
+      res.status(HttpStatusCode.Ok).json({
+        success: true,
+        data,
+        pagination,
+        message: "Posts fetched successfully",
+      });
+    },
+  ];
+
+  getFollowingPosts = async (req: Request, res: Response) => {
+    const userId = req?.user?.id;
+
+    const { posts: data, pagination } = await postService.getFeed(
+      userId,
+      req.query,
+      "following"
+    );
+
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      data,
+      pagination,
       message: "Posts fetched successfully",
     });
   };
@@ -236,11 +279,16 @@ class PostController {
   getSpotlightPosts = async (req: Request, res: Response) => {
     const userId = req?.user?.id;
 
-    const data = await postService.getFeed(userId, req.query, "spotlight");
+    const { posts: data, pagination } = await postService.getFeed(
+      userId,
+      req.query,
+      "spotlight"
+    );
 
     res.status(HttpStatusCode.Ok).json({
       success: true,
       data,
+      pagination,
       message: "Posts fetched successfully",
     });
   };
