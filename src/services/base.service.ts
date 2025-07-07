@@ -6,7 +6,7 @@ import neo4j, {
   type Session,
 } from "neo4j-driver";
 import { db_password, db_uri, db_username } from "@/config";
-import { getPaginationFilters, IReadQueryParams } from "@/utils";
+import { getPaginationFilters, IReadQueryParams, toNativeTypes } from "@/utils";
 import { NodeLabels, RelationshipTypes } from "@/enums";
 
 export default class BaseService {
@@ -42,13 +42,29 @@ export default class BaseService {
 
   protected async readFromDB<T extends RecordShape>(
     cypher: string,
+    params?: IReadQueryParams & Record<string, any>,
+    paginated?: false
+  ): Promise<QueryResult<T>>;
+
+  protected async readFromDB<T extends RecordShape>(
+    cypher: string,
+    params: IReadQueryParams & Record<string, any>,
+    paginated: true
+  ): Promise<{
+    result: QueryResult<T>;
+    pagination: { page: number; limit: number; total: number };
+  }>;
+
+  protected async readFromDB<T extends RecordShape>(
+    cypher: string,
     params: IReadQueryParams & Record<string, any> = {
       sort: "DESC",
       page: 1,
       limit: 10,
       skip: 0,
-    }
-  ): Promise<QueryResult<T>> {
+    },
+    paginated: Boolean = false
+  ): Promise<any> {
     const session = this.getSession();
     const finalParams = getPaginationFilters(params);
 
@@ -73,11 +89,22 @@ export default class BaseService {
     finalParams.limit = neo4j.int(finalParams.limit || 10);
     finalParams.skip = neo4j.int(finalParams.skip || 0);
 
-    return await session
+    const result = await session
       .executeRead((tx: ManagedTransaction) => tx.run<T>(cypher, finalParams))
       .finally(async () => {
         await session.close();
       });
+
+    return paginated
+      ? {
+          result,
+          pagination: toNativeTypes({
+            page: finalParams?.page,
+            skip: finalParams?.page,
+            limit: finalParams?.limit,
+          }),
+        }
+      : result;
   }
 
   protected async writeToDB<T extends RecordShape>(

@@ -32,6 +32,7 @@ class UserService extends BaseService {
         "lastLogin",
         "following",
         "followers",
+        "bio",
         ...extraFields,
       ]);
     } catch (error) {
@@ -102,6 +103,7 @@ class UserService extends BaseService {
       "lastName",
       "username",
       "lastLogin",
+      "bio",
     ]);
 
     const result = await this.writeToDB(

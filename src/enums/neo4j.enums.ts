@@ -27,5 +27,6 @@ export enum RelationshipTypes {
   COMMENTED_BY = "COMMENTED_BY", // User -> COMMENT
   REPLIED_TO = "REPLIED_TO", // COMMENT -> COMMENT
   HAS_COMMENT = "HAS_COMMENT", // POST -> COMMENT
+  HAS_FILE = "HAS_FILE", // POST -> FILE
   
 }

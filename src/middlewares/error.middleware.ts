@@ -22,7 +22,7 @@ export const errorHandler: ErrorRequestHandler = (
   next: NextFunction
 ): void => {
   let error: CustomError = { ...err };
-  
+
   if (err instanceof ErrorResponse) {
     res.status(HttpStatusCode.BadRequest).json({
       success: false,
@@ -125,25 +125,58 @@ export const errorHandler: ErrorRequestHandler = (
     if (err instanceof Neo4jError) {
       const neo4jError = err;
 
-
       let message = "Internal Server Error";
       let statusCode = HttpStatusCode.InternalServerError;
 
-      // Customize message based on classification or code
-      if (neo4jError.classification === "CLIENT_ERROR") {
-        statusCode = HttpStatusCode.BadRequest;
+      if (
+        neo4jError.code ===
+          "Neo.ClientError.Schema.ConstraintValidationFailed" ||
+        neo4jError.code ===
+          "Neo.ClientError.Statement.ConstraintValidationFailed"
+      ) {
+        statusCode = HttpStatusCode.Conflict; // 409 Conflict is appropriate for duplicates/constraint violations
+        // Attempt to parse the message for more specific details
+        if (
+          neo4jError.message.includes("already exists with label") &&
+          neo4jError.message.includes("and property")
+        ) {
+          // Example: "Node(123) already exists with label `User` and property `email` = 'test@example.com'"
+          const match = neo4jError.message.match(/`(.+?)` = '(.+?)'/);
+          if (match && match[1] && match[2]) {
+            message = `A record with this ${match[1]} (${match[2]}) already exists.`;
+          } else {
+            message = "A record with this unique property already exists.";
+          }
+        } else if (
+          neo4jError.message.includes("already exists with property")
+        ) {
+          // More generic constraint message
+          message = "A record with a unique property already exists.";
+        } else {
+          message =
+            "Duplicate: A unique record already exists or a required property is missing.";
+        }
+      } 
+      // else if (neo4jError.classification === "CLIENT_ERROR") {
+      //   // General client errors, e.g., malformed queries
+      //   statusCode = HttpStatusCode.BadRequest;
+      //   message = neo4jError.message; // Use the original Neo4j error message for client errors
+      // } 
+      else if (neo4jError.classification === "TRANSIENT_ERROR") {
+        // Temporary issues, e.g., deadlock
+        statusCode = HttpStatusCode.ServiceUnavailable; // 503 Service Unavailable
+        message =
+          "The database is temporarily unavailable. Please try again later.";
+      } else {
+        // Internal server errors from Neo4j
+        statusCode = HttpStatusCode.InternalServerError;
+        // message = "An internal server error occurred.";
       }
-      // else if (neo4jError.classification === "TRANSIENT_ERROR") {
-      //   // statusCode = HttpStatusCode.ServiceUnavailable;
-      //   message = "Temporary database issue. Please try again later.";
-      // }
 
       error = new ErrorResponse(message, statusCode);
     }
 
     console.log({ err });
-
-   
 
     // Logger.err(error.message || "Server Error", true);
 
