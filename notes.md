@@ -43,3 +43,7 @@ You can further expand each node with its key properties if needed, for example:
 - content
 - createdAt
 - ...
+
+
+#### Endpoints Todo
+- Delete post
