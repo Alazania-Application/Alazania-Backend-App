@@ -126,7 +126,7 @@ export function toNativeTypes(properties: Record<string, any>) {
  * @param {any} value
  * @returns {any}
  */
-function valueToNativeType(value: any) {
+export function valueToNativeType(value: any) {
   if (Array.isArray(value)) {
     value = value.map((innerValue) => valueToNativeType(innerValue));
   } else if (isInt(value)) {

@@ -14,7 +14,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { HttpStatusCode } from "axios";
-import {  Request, Response } from "express";
+import { Request, Response } from "express";
 import { body, param } from "express-validator";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
@@ -76,7 +76,7 @@ class PostController {
         .if(body("files").exists())
         .exists()
         .isString(),
-      body("sessionId", "sessionId is required").exists().isUUID(),
+      body("sessionId", "sessionId is required").exists(),
       body("caption", "caption is required")
         .exists()
         .isString()
@@ -91,8 +91,8 @@ class PostController {
       const files = req?.body?.files as IPostFile[];
 
       const sessionPrefix = `${userId}/temp-uploads/${sessionId}`;
-
-      await postService.validatePostAndSessionIds(userId, sessionId)
+      await postService.validatePostAndSessionIds(userId, sessionId);
+      await postService.validateDuplicatePost(userId, sessionId);
 
       await Promise.all(
         files.map(async (file) => {
@@ -102,7 +102,9 @@ class PostController {
             console.warn(
               `Attempted to move a file from an invalid key: ${tempKey}`
             );
-            throw new Error("An unexpected error occurred, Please create a new post"); // throw an error for this key to prevent malicious moves
+            throw new Error(
+              "An unexpected error occurred, Please create a new post"
+            ); // throw an error for this key to prevent malicious moves
           }
 
           const fileName = path.basename(tempKey);
@@ -120,17 +122,9 @@ class PostController {
 
           await s3Config.send(copyCommand);
           file.key = permanentKey;
+          file.url = file.url.replace(tempKey, permanentKey);
 
           console.log(`Successfully copied ${tempKey}`);
-
-          // 2. Delete the original object from the temporary folder
-          const deleteCommand = new DeleteObjectCommand({
-            Bucket: SPACES_BUCKET,
-            Key: tempKey,
-          });
-
-          await s3Config.send(deleteCommand);
-          console.log(`Deleted original temp file ${tempKey}`);
         })
       );
 
@@ -161,7 +155,7 @@ class PostController {
       body("fileType", "fileType is required").exists().isString(),
     ]),
 
-    async (req: Request, res: Response ) => {
+    async (req: Request, res: Response) => {
       const userId = req?.user?.id;
       const { fileName, fileType, sessionId } = req.body;
 
@@ -209,12 +203,14 @@ class PostController {
 
       const data = await postService.initializePostSession(userId);
 
+
       res.status(201).json({
         message: "Post session initialized successfully!",
         data,
       });
     },
   ];
+
 
   getMyPosts = async (req: Request, res: Response) => {
     const userId = req?.user?.id;

@@ -8,18 +8,21 @@ import {
   IReadQueryParams,
   toDTO,
   toNativeTypes,
+  valueToNativeType,
 } from "@/utils";
 import { deleteFolderByPrefix } from "@/middlewares/upload.middleware";
 import { HttpStatusCode } from "axios";
 
 class PostService extends BaseService {
   private extractPost = (record: Record<any, any>, userId?: string) => {
-    const post = record.get("post");
-    const creator = record.get("creator");
-    const topic = record.get("topic");
-    const hashtags = record.get("hashtags")?.properties ?? [];
-    const liked = Boolean(!!record.get("liked"));
-    const files = record.get("files")?.map((record: any) => record?.properties);
+    const post = record?.get("post");
+    const creator = record?.get("creator");
+    const topic = record?.get("topic");
+    const hashtags = record?.get("hashtags")?.properties ?? [];
+    const liked = Boolean(!!record?.get("liked"));
+    const files = record
+      ?.get("files")
+      ?.map((record: any) => record?.properties);
 
     if (post) {
       return toNativeTypes({
@@ -46,13 +49,10 @@ class PostService extends BaseService {
     return null;
   };
 
-  async validatePostAndSessionIds(
-    userId: string,
-    sessionId: string
-  ) {
+  async validatePostAndSessionIds(userId: string, sessionId: string) {
     const results = await this.readFromDB(
       `
-        MATCH (session:${NodeLabels.PostSession} {userId: $userId, sessionId: $sessionId})
+        MATCH (u:${NodeLabels.User})-[:${RelationshipTypes.INITIALIZED_POST_SESSION}]->(session:${NodeLabels.PostSession} {sessionId: $sessionId})
         RETURN session LIMIT 1
         `,
       { sessionId, userId }
@@ -63,6 +63,23 @@ class PostService extends BaseService {
         "An error occurred, please create a new post",
         HttpStatusCode.BadRequest
       );
+    }
+  }
+
+  async validateDuplicatePost(userId: string, sessionId: string) {
+    const results = await this.readFromDB(
+      `
+        MATCH (u:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(post:${NodeLabels.Post} {id: $sessionId})
+        RETURN post LIMIT 1
+        `,
+      { sessionId, userId }
+    );
+
+    if (results.records?.length) {
+      console.log({
+        post: results.records[0]?.get("post")?.properties,
+      });
+      throw new ErrorResponse("Duplicate post", HttpStatusCode.BadRequest);
     }
   }
 
@@ -101,27 +118,25 @@ class PostService extends BaseService {
     // }
 
     // initialize the post session
+
     const result = await this.writeToDB(
       `
         MATCH (u:${NodeLabels.User} {id: $userId})
-        MERGE (p:${NodeLabels.PostSession} {userId: $userId})
-        ON CREATE SET
-          p.sessionId = randomUUID()
-        ON MATCH SET
-          p.caption = "",
-          p.files = []
+        OPTIONAL MATCH (exisitingSession:${NodeLabels.PostSession} {userId: $userId})
+        DETACH DELETE exisitingSession
 
+        CREATE (newSession:${NodeLabels.PostSession} {userId: $userId, sessionId: randomUUID()})
 
-        MERGE (u)-[r:${RelationshipTypes.INITIALIZED_POST_SESSION}]->(p)
+        MERGE (u)-[r:${RelationshipTypes.INITIALIZED_POST_SESSION}]->(newSession)
 
-        WITH p
-        CALL apoc.ttl.expireIn(p, 1, 'd')
-        RETURN p
+        WITH newSession
+        CALL apoc.ttl.expireIn(newSession, 1, 'd')
+        RETURN newSession
       `,
       params
     );
 
-    const postNode = result.records[0].get("p")?.properties;
+    const postNode = result.records[0]?.get("newSession")?.properties;
 
     return toNativeTypes(postNode);
   }
@@ -153,7 +168,8 @@ class PostService extends BaseService {
           createdAt: datetime($createdAt),
           likes: 0,
           comments: 0,
-          shares: 0
+          shares: 0,
+          isDeleted: false
         })
 
         // // Create user - post relationship
@@ -165,6 +181,13 @@ class PostService extends BaseService {
         OPTIONAL MATCH (t:${NodeLabels.Topic} {slug: $topicSlug})
         FOREACH (_ IN CASE WHEN t IS NOT NULL THEN [1] ELSE [] END |
           MERGE (p)-[:${RelationshipTypes.BELONGS_TO}]->(t)
+        )
+
+        WITH p, $postId AS sessionID
+        // // Optional match and delete session
+        OPTIONAL MATCH (session:${NodeLabels.PostSession} {sessionId: sessionID})
+        FOREACH (_ IN CASE WHEN session IS NOT NULL THEN [1] ELSE [] END |
+          DETACH DELETE session
         )
 
 
@@ -199,19 +222,32 @@ class PostService extends BaseService {
       params
     );
 
-    const postNode = result.records[0]?.get("p");
+    const postNode = result.records[0];
 
-    return toNativeTypes({
-      id: postNode?.properties?.id,
-      caption: postNode?.properties?.caption,
-      createdAt: postNode?.properties?.createdAt,
-      files: params?.files ?? [],
-      engagement: {
-        likes: postNode?.properties?.likes ?? 0,
-        comments: postNode?.properties?.comments ?? 0,
-        shares: postNode?.properties?.shares ?? 0,
-      },
-    }) as Post;
+    return this.extractPost(postNode) as Post;
+  }
+
+  async deletePost(payload: { userId: string; postId: string }) {
+    return await this.writeToDB(
+      `
+        MATCH (user: ${NodeLabels.User} {id: $userId})-[r:${RelationshipTypes.POSTED}]->(post:${NodeLabels.Post} {id: $postId})<-[:${RelationshipTypes.HAS_COMMENT}]-(comment:${NodeLabels.Comment})
+        SET post.isDeleted = true, comment.isDeleted = true
+        RETURN post
+      `,
+      payload
+    );
+  }
+
+  async getPostCount(userId: string) {
+    const result = await this.readFromDB(
+      `
+        MATCH (post:${NodeLabels.Post} {isDeleted:false})<-[:${RelationshipTypes.POSTED}]-(user:${NodeLabels.User} {id: $userId}) 
+        RETURN COUNT(post) AS total
+      `,
+      { userId }
+    );
+
+    return valueToNativeType(result?.records?.[0]?.get("total")) ?? 0;;
   }
 
   // Likes
@@ -241,7 +277,7 @@ class PostService extends BaseService {
     const result = await this.writeToDB(
       `
         MATCH (u:${NodeLabels.User} {id: $userId})
-        MATCH (p:${NodeLabels.Post} {id: $postId})
+        MATCH (p:${NodeLabels.Post} {id: $postId, isDeleted: false})
 
         MERGE (u)-[r:${RelationshipTypes.LIKED}]->(p)
         ON CREATE SET r.timestamp = datetime($timestamp), p.likes = coalesce(p.likes, 0) + 1
@@ -271,7 +307,7 @@ class PostService extends BaseService {
   async unlikePost(userId: string, postId: string) {
     const result = await this.writeToDB(
       `
-        MATCH (u:${NodeLabels.User} {id: $userId})-[r:${RelationshipTypes.LIKED}]->(p:${NodeLabels.Post} {id: $postId})
+        MATCH (u:${NodeLabels.User} {id: $userId})-[r:${RelationshipTypes.LIKED}]->(p:${NodeLabels.Post} {id: $postId, isDeleted: false})
         DELETE r
         SET p.likes = CASE WHEN p.likes > 0 THEN p.likes - 1 ELSE 0 END
         with p
@@ -302,7 +338,7 @@ class PostService extends BaseService {
     await this.writeToDB(
       `
       MATCH (u:${NodeLabels.User} {id: $userId})
-      MATCH (p:${NodeLabels.Post} {id: $postId})
+      MATCH (p:${NodeLabels.Post} {id: $postId, isDeleted: false})
       
       CREATE (c:${NodeLabels.Comment} {
         id: randomUUID(),
@@ -316,7 +352,8 @@ class PostService extends BaseService {
       MERGE (p)-[:${RelationshipTypes.HAS_COMMENT}]->(c)
       MERGE (u)-[comment:${RelationshipTypes.COMMENTED_ON}]->(p)
       ON CREATE SET 
-        comment.timestamp = datetime($createdAt)
+        comment.timestamp = datetime($createdAt),
+        comment.isDeleted = false
 
       SET p.comments = coalesce(p.comments, 0) + 1
       `,
@@ -340,14 +377,15 @@ class PostService extends BaseService {
     return await this.writeToDB(
       `
         MATCH (u:${NodeLabels.User} {id: $userId})
-        MATCH (p:${NodeLabels.Post} {id: $postId})
-        MATCH (parent:${NodeLabels.Comment} {id: $parentCommentId})
+        MATCH (p:${NodeLabels.Post} {id: $postId, isDeleted: false})
+        MATCH (parent:${NodeLabels.Comment} {id: $parentCommentId, isDeleted: false})
         
         CREATE (reply:${NodeLabels.Comment} {
           id: randomUUID(),
           comment: $comment,
           createdAt: datetime($createdAt),
-          updatedAt: datetime($createdAt)
+          updatedAt: datetime($createdAt),
+          isDeleted: false
         })
 
         MERGE (u)-[:${RelationshipTypes.COMMENTED_ON}]->(p)
@@ -366,7 +404,7 @@ class PostService extends BaseService {
     return await this.writeToDB(
       `
         MATCH (u:${NodeLabels.User} {id: $userId})
-        MATCH (c:${NodeLabels.Comment} {id: $commentId})
+        MATCH (c:${NodeLabels.Comment} {id: $commentId, isDeleted: false})
         MERGE (u)-[r:${RelationshipTypes.LIKED}]->(c)
         ON CREATE SET r.timestamp = datetime($timestamp), c.likes = coalesce(c.likes, 0) + 1
 
@@ -379,7 +417,7 @@ class PostService extends BaseService {
   async unlikeAComment(userId: string, commentId: string) {
     await this.writeToDB(
       `
-        MATCH (u:${NodeLabels.User} {id: $userId})-[r:${RelationshipTypes.LIKED}]->(c:${NodeLabels.Comment} {id: $commentId})
+        MATCH (u:${NodeLabels.User} {id: $userId})-[r:${RelationshipTypes.LIKED}]->(c:${NodeLabels.Comment} {id: $commentId, isDeleted: false})
         DELETE r
         SET c.likes = CASE WHEN c.likes > 0 THEN c.likes - 1 ELSE 0 END
       `,
@@ -395,7 +433,7 @@ class PostService extends BaseService {
       `
       MATCH (u:${NodeLabels.User} {id: $userId})<-[:${RelationshipTypes.COMMENTED_BY}]-(c:${NodeLabels.Comment} {id: $commentId})
       MATCH (p:${NodeLabels.Post})-[:${RelationshipTypes.HAS_COMMENT}]->(c)
-      SET c.comment = '[deleted]', c.deleted = true, p.comments = CASE WHEN p.comments > 0 THEN p.comments - 1 ELSE 0 END
+      SET c.isDeleted = true, p.comments = CASE WHEN p.comments > 0 THEN p.comments - 1 ELSE 0 END
       `,
       { userId, commentId }
     );
@@ -404,7 +442,7 @@ class PostService extends BaseService {
   async getPostComments(postId: string) {
     const results = await this.readFromDB(
       `
-        MATCH (p:${NodeLabels.Post} {id: $postId})-[:${RelationshipTypes.HAS_COMMENT}]->(c:${NodeLabels.Comment})
+        MATCH (p:${NodeLabels.Post} {id: $postId})-[:${RelationshipTypes.HAS_COMMENT}]->(c:${NodeLabels.Comment} {isDeleted: false})
         OPTIONAL MATCH (c)-[:${RelationshipTypes.COMMENTED_BY}]->(u: ${NodeLabels.User})
         RETURN c, u
         ORDER BY c.createdAt ASC
@@ -442,11 +480,11 @@ class PostService extends BaseService {
       cypherQuery = `
       MATCH (u:${NodeLabels.User} {id: $userId})
 
-      OPTIONAL MATCH (u)-[interest:${RelationshipTypes.INTERESTED_IN}]->(topic:${NodeLabels.Topic})<-[:${RelationshipTypes.BELONGS_TO}]-(topicPost:${NodeLabels.Post})
+      OPTIONAL MATCH (u)-[interest:${RelationshipTypes.INTERESTED_IN}]->(topic:${NodeLabels.Topic})<-[:${RelationshipTypes.BELONGS_TO}]-(topicPost:${NodeLabels.Post} {isDeleted: false})
       OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS_HASHTAG}]
       ->(hashtag:${NodeLabels.Hashtag})
       <-[:${RelationshipTypes.HAS_HASHTAG}]
-      -(hashtagPost:${NodeLabels.Post})
+      -(hashtagPost:${NodeLabels.Post} {isDeleted: false})
       
       WITH u,
           COLLECT(DISTINCT { post: topicPost, topicScore: interest.interestLevel }) AS topicResults,
@@ -485,9 +523,9 @@ class PostService extends BaseService {
     } else {
       cypherQuery = `
         MATCH (u:${NodeLabels.User} {id: $userId})-[:${RelationshipTypes.POSTED}]->(myPost:${NodeLabels.Post})
-        OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS}]->(followedUser:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(followedPost:${NodeLabels.Post})
-        OPTIONAL MATCH (u)-[:${RelationshipTypes.INTERESTED_IN}]->(topic:${NodeLabels.Topic})<-[:${RelationshipTypes.BELONGS_TO}]-(topicPost:${NodeLabels.Post})
-        OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS}]->(hashtag:${NodeLabels.Hashtag})<-[:${RelationshipTypes.HAS_HASHTAG}]-(hashtagPost:${NodeLabels.Post})
+        OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS}]->(followedUser:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(followedPost:${NodeLabels.Post} {isDeleted: false})
+        OPTIONAL MATCH (u)-[:${RelationshipTypes.INTERESTED_IN}]->(topic:${NodeLabels.Topic})<-[:${RelationshipTypes.BELONGS_TO}]-(topicPost:${NodeLabels.Post} {isDeleted: false})
+        OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS}]->(hashtag:${NodeLabels.Hashtag})<-[:${RelationshipTypes.HAS_HASHTAG}]-(hashtagPost:${NodeLabels.Post} {isDeleted: false})
 
         WITH u,
               COLLECT(DISTINCT myPost) as myPosts,
@@ -550,7 +588,7 @@ class PostService extends BaseService {
     let queryParams: Record<string, any>;
 
     cypherQuery = `
-      MATCH (post: ${NodeLabels.Post})<-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User} {id: $userId})
+      MATCH (post: ${NodeLabels.Post} {isDeleted: false})<-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User} {id: $userId})
 
       WITH post, creator
 
@@ -588,7 +626,7 @@ class PostService extends BaseService {
     await this.writeToDB(
       `
         MATCH (u:${NodeLabels.User} {id: $userId})
-        MATCH (p:${NodeLabels.Post} {postId: $postId})
+        MATCH (p:${NodeLabels.Post} {postId: $postId, isDeleted: false})
         CREATE (u)-[r:${RelationshipTypes.ENGAGES_WITH}]->(p)
         SET r.engagementType = 'share',
             r.timestamp = datetime($timestamp)

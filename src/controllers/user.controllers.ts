@@ -1,7 +1,7 @@
 import { UserResponseDto } from "@/models";
 import { uploadFile } from "@/middlewares/upload.middleware";
 import ValidatorMiddleware from "@/middlewares/validator.middleware";
-import { hashtagService, topicService, userService } from "@/services";
+import { hashtagService, postService, topicService, userService } from "@/services";
 import { HttpStatusCode } from "axios";
 import { NextFunction, Request, Response } from "express";
 import { body, param } from "express-validator";
@@ -11,9 +11,15 @@ class UserController {
   getProfile = async (req: Request, res: Response, next: NextFunction) => {
     const user: UserResponseDto = req.user;
 
+    
+    const postCount = await postService.getPostCount(user?.id)
+
     res.status(HttpStatusCode.Ok).json({
       success: true,
-      data: user,
+      data: {
+        ...user,
+        totalPosts: postCount
+      },
       message: "User profile fetched successfully",
     });
   };

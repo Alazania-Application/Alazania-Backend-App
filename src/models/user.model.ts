@@ -23,6 +23,7 @@ export interface IUser extends BaseModel {
 
   following?: number;
   followers?: number;
+  totalPosts?: number;
 
   lastLogin?: Date | string;
 }
