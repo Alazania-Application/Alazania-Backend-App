@@ -50,7 +50,9 @@ class SeedService extends BaseService {
       ["user_id_index", `FOR (u:${NodeLabels.User}) ON (u.id)`],
       ["post_createdAt_index", `FOR (p:${NodeLabels.Post}) ON (p.createdAt)`],
       ["post_id_index", `FOR (p:${NodeLabels.Post}) ON (p.id)`],
+      ["post_isDeleted_index", `FOR (p:${NodeLabels.Post}) ON (p.isDeleted)`],
       ["comment_id_index", `FOR (c:${NodeLabels.Comment}) ON (c.id)`],
+      ["comment_isDeleted_index", `FOR (c:${NodeLabels.Comment}) ON (c.isDeleted)`],
       ["hashtag_slug_index", `FOR (h:${NodeLabels.Hashtag}) ON (h.slug)`],
 
       // === NEW: PostSession Indexes ===

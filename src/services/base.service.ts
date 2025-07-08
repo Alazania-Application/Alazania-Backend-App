@@ -7,7 +7,6 @@ import neo4j, {
 } from "neo4j-driver";
 import { db_password, db_uri, db_username } from "@/config";
 import { getPaginationFilters, IReadQueryParams, toNativeTypes } from "@/utils";
-import { NodeLabels, RelationshipTypes } from "@/enums";
 
 export default class BaseService {
   private driver: Driver;

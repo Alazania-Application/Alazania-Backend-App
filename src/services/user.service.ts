@@ -1,4 +1,4 @@
-import { IReadQueryParams, omitDTO, toDTO } from "@/utils";
+import { IReadQueryParams, omitDTO, toDTO, valueToNativeType } from "@/utils";
 import BaseService from "./base.service";
 import { IUser, UserResponseDto } from "@/models";
 import { NodeLabels, RelationshipTypes } from "@/enums";
@@ -39,18 +39,28 @@ class UserService extends BaseService {
       return null;
     }
   };
-  getUserById = async (id: string): Promise<UserResponseDto> => {
+
+  getUserById = async (id: string): Promise<UserResponseDto | null> => {
     const result = await this.readFromDB(
       `
       MATCH (u:User {id: $id})
-      RETURN u 
+      OPTIONAL MATCH (post:${NodeLabels.Post} {isDeleted:false})<-[:${RelationshipTypes.POSTED}]-(u) 
+      RETURN u, COUNT(post) AS totalPosts
       `,
       { id }
     );
     const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
+    const totalPosts =
+      valueToNativeType(result?.records[0]?.get("totalPosts")) ?? 0;
+
     const user = this.withDTO(doc) as IUser;
 
-    return user;
+    return user
+      ? {
+          ...(user ?? {}),
+          totalPosts,
+        }
+      : null;
   };
 
   getUserByQuery = async (query: string): Promise<UserResponseDto> => {
@@ -132,6 +142,7 @@ class UserService extends BaseService {
           // }
         OPTIONAL MATCH (other)-[isFollowingBack:${RelationshipTypes.FOLLOWS}]->(currentUser)
         OPTIONAL MATCH (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(other)
+   
         RETURN other, isFollowing, isFollowingBack
         LIMIT $limit
       `;
@@ -181,9 +192,9 @@ class UserService extends BaseService {
 
     const result = await this.readFromDB(query, params);
 
-    return result.records.map((v) =>
-      this.withPublicDTO(v.get("other")?.properties)
-    ) as IUser[];
+    return result.records.map((v) => ({
+      ...this.withPublicDTO(v.get("other")?.properties)
+    })) as IUser[];
   };
 
   followUser = async (currentUserId: string, userToFollowId: string) => {
