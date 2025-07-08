@@ -92,7 +92,7 @@ class AuthenticatorMiddleware {
 
         // @ts-ignore
         req.id = decode.id;
-        let user: IUser;
+        let user: IUser|null;
 
         user = await userService.getUserById(req.id);
 
