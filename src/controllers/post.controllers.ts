@@ -113,8 +113,9 @@ class PostController {
           // 1. Copy the object from temp to permanent folder
           const copyCommand = new CopyObjectCommand({
             Bucket: SPACES_BUCKET,
-            CopySource: `${SPACES_BUCKET}/${tempKey}`, //
+            CopySource: `${SPACES_BUCKET}/${tempKey}`,
             Key: permanentKey,
+            ACL: "public-read",
           });
 
           await s3Config.send(copyCommand);
