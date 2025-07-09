@@ -5,6 +5,12 @@ import { Router } from "express";
 export const interestRouter = Router();
 
 // TOPICS
+interestRouter.post(
+  "/topic",
+  authMiddleWare.protectRoute,
+  interestController.createTopic
+);
+
 interestRouter.get(
   "/topic/all",
   authMiddleWare.protectRoute,
@@ -52,6 +58,12 @@ interestRouter.get(
   "/hashtag/followed",
   authMiddleWare.protectRoute,
   interestController.getUserFollowedHashtags
+);
+
+interestRouter.get(
+  "/hashtags/all",
+  authMiddleWare.protectRoute,
+  interestController.getAllHashtags
 );
 
 interestRouter.get(

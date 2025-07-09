@@ -3,7 +3,7 @@ import BaseService from "./base.service";
 import slugify from "slugify";
 import { topics } from "@/data";
 import { NodeLabels, RelationshipTypes } from "@/enums";
-import { IReadQueryParams } from "@/utils";
+import { IReadQueryParams, toNativeTypes } from "@/utils";
 
 class HashtagService extends BaseService {
   seedHashtagsAndTopics = async () => {
@@ -199,23 +199,28 @@ class HashtagService extends BaseService {
 
     return result.records.map((record) => {
       const hashtagNode = record.get("h")?.properties as Hashtag;
-      return {
+      return toNativeTypes({
         slug: hashtagNode?.slug,
         name: hashtagNode?.name,
         popularity: hashtagNode?.popularity,
-      };
+      });
     });
   };
 
-  getTrendingHashtags = async (
+  getAllHashtags = async (
     params: IReadQueryParams & { userId?: string } = {}
   ): Promise<Hashtag[]> => {
     const result = await this.readFromDB(
       `
         MATCH (h:${NodeLabels.Hashtag})
-        WHERE h.lastUsedAt >= datetime() - duration('P7D')
-        RETURN h.slug AS hashtag, h.popularity
-        ORDER BY h.popularity DESC
+        OPTIONAL MATCH (h)<-[:${RelationshipTypes.HAS_HASHTAG}]-(p:${NodeLabels.Post} {isDeleted: false})
+
+        WITH h, count(p) AS usageCount, COALESCE($search, null) AS search
+        WHERE search IS NULL OR trim(search) = "" OR h.slug STARTS WITH toLower(trim(search))
+
+        OPTIONAL MATCH (u:${NodeLabels.User} {id: $userId})-[following:${RelationshipTypes.FOLLOWS_HASHTAG}]->(h)
+        RETURN h AS hashtag, usageCount, following
+        ORDER BY usageCount DESC
         SKIP $skip
         LIMIT $limit
       `,
@@ -223,12 +228,49 @@ class HashtagService extends BaseService {
     );
 
     return result.records.map((record) => {
-      const hashtagNode = record.get("h")?.properties as Hashtag;
-      return {
+      const hashtagNode = record.get("hashtag")?.properties as Hashtag;
+      const following = Boolean(!!record?.get("following")) ;
+      return toNativeTypes({
         slug: hashtagNode?.slug,
         name: hashtagNode?.name,
         popularity: hashtagNode?.popularity,
-      };
+        following,
+      }) as Hashtag;
+    });
+  };
+
+  getTrendingHashtags = async (
+    params: IReadQueryParams & { userId?: string } = { userId: "" }
+  ): Promise<Hashtag[]> => {
+    const result = await this.readFromDB(
+      `
+        MATCH (h:${NodeLabels.Hashtag})
+        WHERE h.lastUsedAt >= datetime() - duration('P7D')
+        OPTIONAL MATCH (h)<-[:${RelationshipTypes.HAS_HASHTAG}]-(p:${NodeLabels.Post} {isDeleted: false})
+
+        WITH h, count(p) AS usageCount, COALESCE($search, null) AS search
+
+        WHERE search IS NULL OR trim(search) = "" OR h.slug STARTS WITH toLower(trim(search))
+
+        OPTIONAL MATCH (u:${NodeLabels.User} {id: $userId})-[following:${RelationshipTypes.FOLLOWS_HASHTAG}]->(h)
+
+        RETURN h AS hashtag, following
+        ORDER BY usageCount DESC
+        SKIP $skip
+        LIMIT $limit
+      `,
+      params
+    );
+
+    return result.records.map((record) => {
+      const hashtagNode = record.get("hashtag")?.properties as Hashtag;
+      const following = Boolean(!!record?.get("following")) ;
+      return toNativeTypes({
+        slug: hashtagNode?.slug,
+        name: hashtagNode?.name,
+        popularity: hashtagNode?.popularity,
+        following,
+      }) as Hashtag;
     });
   };
 

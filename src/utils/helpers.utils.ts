@@ -168,7 +168,7 @@ export const getPaginationFilters = ({
   page = 1,
   limit = 10,
   ...otherQueries
-}: IReadQueryParams): IReadQueryParams => {
+}: IReadQueryParams): IReadQueryParams & Record<string, any> => {
   const max_limit = 100;
 
   const sanitizedSort: "ASC" | "DESC" =
@@ -184,12 +184,20 @@ export const getPaginationFilters = ({
     (sanitizedPage - 1) * Math.min(sanitizedLimit, max_limit)
   );
 
+  // const formattedOtherQueries
+  const searchQuery = (otherQueries as any)?.search ?? ""
+  const search =
+    !searchQuery || searchQuery.trim() === ""
+      ? null
+      : searchQuery.toLowerCase();
+
   return {
     page: int(sanitizedPage),
     limit: int(Math.min(sanitizedLimit, max_limit)),
     sort: sanitizedSort,
     skip: int(skip),
     ...otherQueries,
+    search
   };
 };
 

@@ -94,13 +94,24 @@ export default class BaseService {
         await session.close();
       });
 
+    let totalCount = 0;
+    if (paginated) {
+      try {
+        totalCount = result.records[0]?.get("totalCount") ?? 0;
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    // const totalCount = toNativeTypes(result.records[0]?.toObject() ?? {})
+
     return paginated
       ? {
           result,
           pagination: toNativeTypes({
             page: finalParams?.page,
-            skip: finalParams?.page,
             limit: finalParams?.limit,
+            totalCount
           }),
         }
       : result;

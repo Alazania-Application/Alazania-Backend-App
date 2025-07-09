@@ -37,7 +37,7 @@ class PostService extends BaseService {
         },
         creator: {
           userId: creator?.properties?.id,
-          username: creator?.properties?.username,
+          username: creator?.properties?.username ?? creator?.properties?.email,
         },
         topic: topic ? topic?.properties?.name : null,
         hashtags,
@@ -227,7 +227,9 @@ class PostService extends BaseService {
     return this.extractPost(postNode) as Post;
   }
 
-  async deletePost(payload: { userId: string; postId: string }) {
+  async deletePost(
+    payload: { userId: string; postId: string } = { userId: "", postId: "" }
+  ) {
     return await this.writeToDB(
       `
         MATCH (user: ${NodeLabels.User} {id: $userId})-[r:${RelationshipTypes.POSTED}]->(post:${NodeLabels.Post} {id: $postId})<-[:${RelationshipTypes.HAS_COMMENT}]-(comment:${NodeLabels.Comment})
@@ -247,7 +249,34 @@ class PostService extends BaseService {
       { userId }
     );
 
-    return valueToNativeType(result?.records?.[0]?.get("total")) ?? 0;;
+    return valueToNativeType(result?.records?.[0]?.get("total")) ?? 0;
+  }
+
+  async getUserPostCount(currentUser: string = "", userId: string = "") {
+    if (currentUser == userId) return;
+
+    const result = await this.readFromDB(
+      `
+        OPTIONAL MATCH(currentUser:${NodeLabels.User} {id: $currentUser})
+        OPTIONAL MATCH(user:${NodeLabels.User} {id: $userId})
+        OPTIONAL MATCH(currentUser)-[blockedUser:${RelationshipTypes.BLOCKED}]->(user)
+        OPTIONAL MATCH(user)-[blockedByUser:${RelationshipTypes.BLOCKED}]->(currentUser)
+        
+        // Filter condition:
+        // - The currentUser must not be null (the post must have a creator)
+        // - The 'blockedUser' relationship must NOT exist (currentUser has not blocked postCreator)
+        // - The 'blockedByUser' relationship must NOT exist (postCreator has not blocked currentUser)
+        WHERE currentUser IS NOT NULL AND user IS NOT NULL 
+          AND blockedUser IS NULL
+          AND blockedByUser IS NULL
+
+        MATCH (post:${NodeLabels.Post} {isDeleted:false})<-[:${RelationshipTypes.POSTED}]-(user) 
+        RETURN COUNT(post) AS total
+      `,
+      { userId, currentUser }
+    );
+
+    return valueToNativeType(result?.records?.[0]?.get("total")) ?? 0;
   }
 
   // Likes
@@ -477,48 +506,139 @@ class PostService extends BaseService {
     let queryParams: Record<string, any>;
 
     if (type === "spotlight") {
+      //   cypherQuery = `
+      //   MATCH (u:${NodeLabels.User} {id: $userId})
+
+      //   OPTIONAL MATCH (u)-[interest:${RelationshipTypes.INTERESTED_IN}]->(topic:${NodeLabels.Topic})<-[:${RelationshipTypes.BELONGS_TO}]-(topicPost:${NodeLabels.Post} {isDeleted: false})
+      //   OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS_HASHTAG}]
+      //   ->(hashtag:${NodeLabels.Hashtag})
+      //   <-[:${RelationshipTypes.HAS_HASHTAG}]
+      //   -(hashtagPost:${NodeLabels.Post} {isDeleted: false})
+
+      //   WITH u,
+      //       COLLECT(DISTINCT { post: topicPost, topicScore: interest.interestLevel }) AS topicResults,
+      //       COLLECT(DISTINCT hashtagPost) as hashtagPosts
+
+      //   // Combine all posts, avoiding duplicates
+      //   WITH u, topicResults, hashtagPosts,
+      //       [result IN topicResults | result.post] AS topicPosts
+
+      //   WITH u, topicResults, hashtagPosts, topicPosts,
+      //       apoc.coll.toSet(topicPosts + hashtagPosts) AS allPosts
+
+      //   UNWIND allPosts AS post
+
+      //   // Get topicScore if present, else 0
+      //   WITH u, post, topicResults,
+      //       REDUCE(score = 0, r IN topicResults | CASE WHEN r.post = post THEN COALESCE(r.topicScore, 0) ELSE score END) AS topicScore,
+      //       CASE WHEN post IN hashtagPosts THEN 1 ELSE 0 END AS hashtagScore
+
+      //   WITH u, post, topicScore, hashtagScore,
+      //       topicScore * 0.7 + hashtagScore * 0.3 AS relevanceScore
+      //   SKIP $skip
+      //   LIMIT $limit
+
+      //   // Get additional data for display
+      //   CALL {
+      //     WITH post, relevanceScore
+      //     OPTIONAL MATCH (post)<-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User})
+      //     OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
+      //     OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
+      //     OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
+
+      //     WITH post, creator, topic, liked, hashtag, relevanceScore
+
+      //     OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(f:${NodeLabels.File})
+      //     ORDER BY r.order
+      //     RETURN post, creator, topic, liked, relevanceScore,
+      //           COLLECT(DISTINCT hashtag.name) AS hashtags,
+      //           COLLECT(f) AS files
+      //   }
+
+      //   WITH post, creator, topic, liked, hashtags, relevanceScore, files
+
+      //   // OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(f:${NodeLabels.File})
+      //   // WITH post, creator, topic, liked, hashtags, relevanceScore, COLLECT(f) AS files, r
+      //   // ORDER BY r.order
+
+      //   RETURN post, creator, topic, liked, hashtags, relevanceScore, files
+      //   ORDER BY relevanceScore DESC, post.createdAt DESC
+      // `;
+
       cypherQuery = `
-      MATCH (u:${NodeLabels.User} {id: $userId})
+          MATCH (u:${NodeLabels.User} {id: $userId})
+          OPTIONAL MATCH (u)-[interest:${RelationshipTypes.INTERESTED_IN}]->(topic:${NodeLabels.Topic})
+                          <-[:${RelationshipTypes.BELONGS_TO}]-(topicPost:${NodeLabels.Post} {isDeleted: false})
+          OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS_HASHTAG}]
+                          ->(hashtag:${NodeLabels.Hashtag})
+                          <-[:${RelationshipTypes.HAS_HASHTAG}]
+                          -(hashtagPost:${NodeLabels.Post} {isDeleted: false})
 
-      OPTIONAL MATCH (u)-[interest:${RelationshipTypes.INTERESTED_IN}]->(topic:${NodeLabels.Topic})<-[:${RelationshipTypes.BELONGS_TO}]-(topicPost:${NodeLabels.Post} {isDeleted: false})
-      OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS_HASHTAG}]
-      ->(hashtag:${NodeLabels.Hashtag})
-      <-[:${RelationshipTypes.HAS_HASHTAG}]
-      -(hashtagPost:${NodeLabels.Post} {isDeleted: false})
-      
-      WITH u,
-          COLLECT(DISTINCT { post: topicPost, topicScore: interest.interestLevel }) AS topicResults,
-          COLLECT(DISTINCT hashtagPost) as hashtagPosts
-      
-      // Flatten posts into one list, adding default scores where missing
-      UNWIND topicResults AS topicResult
-      WITH u, topicResult.post AS post, topicResult.topicScore AS topicScore, hashtagPosts
+          WITH u,
+              COLLECT(DISTINCT { post: topicPost, topicScore: interest.interestLevel }) AS topicResults,
+              COLLECT(DISTINCT hashtagPost) AS hashtagPosts
 
-      WITH u, post,
-          COALESCE(topicScore, 0) AS topicScore,
-          CASE WHEN post IN hashtagPosts THEN 1 ELSE 0 END AS hashtagScore
+          WITH u, topicResults,
+              [result IN topicResults | result.post] AS topicPosts,
+              hashtagPosts
 
-      // Calculate weighted relevance
-      WITH u, post, topicScore, hashtagScore,
-          topicScore * 0.7 + hashtagScore * 0.3 AS relevanceScore
+          WITH u, topicResults, hashtagPosts,
+              apoc.coll.toSet(topicPosts + hashtagPosts) AS allPotentialPosts
+          
+          // Filter out posts from blocked users or users who blocked the current user
+          UNWIND allPotentialPosts AS post
 
-      // Get additional data for display
-      OPTIONAL MATCH (post)<-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User})
-      OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
-      OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
-      OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
-      
-      WITH post, creator, topic, liked, COLLECT(DISTINCT hashtag.name) AS hashtags, relevanceScore
+          OPTIONAL MATCH (post)<-[:${RelationshipTypes.POSTED}]-(postCreator:${NodeLabels.User})
+          // Check if the current user (u) has blocked the postCreator
+          OPTIONAL MATCH (u)-[blockedUser:${RelationshipTypes.BLOCKED}]->(postCreator)
 
-      OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(f:${NodeLabels.File})
-      WITH post, creator, topic, liked, hashtags, relevanceScore, COLLECT(f) AS files, r
-      ORDER BY r.order
+          // Check if the postCreator has blocked the current user (u)
+          OPTIONAL MATCH (postCreator)-[blockedByUser:${RelationshipTypes.BLOCKED}]->(u)
 
-      RETURN post, creator, topic, liked, hashtags, relevanceScore, files
-      ORDER BY relevanceScore DESC, post.createdAt DESC
-      SKIP $skip
-      LIMIT $limit
-    `;
+          // Filter condition:
+          // - The postCreator must not be null (the post must have a creator)
+          // - The 'blockedUser' relationship must NOT exist (currentUser has not blocked postCreator)
+          // - The 'blockedByUser' relationship must NOT exist (postCreator has not blocked currentUser)
+          WHERE postCreator IS NOT NULL
+            AND blockedUser IS NULL
+            AND blockedByUser IS NULL
+
+          // filtered posts
+          WITH u, topicResults, hashtagPosts, COLLECT(DISTINCT post) AS allPosts, size(COLLECT(DISTINCT post)) AS totalCount // Re-collect allPosts after filtering
+
+          UNWIND allPosts AS post
+
+          // compute scores
+          WITH u, post, topicResults, hashtagPosts, totalCount,
+              REDUCE(score = 0, r IN topicResults | CASE WHEN r.post = post THEN COALESCE(r.topicScore, 0) ELSE score END) AS topicScore,
+              CASE WHEN post IN hashtagPosts THEN 1 ELSE 0 END AS hashtagScore
+
+          WITH u, post, topicScore, hashtagScore, totalCount,
+              topicScore * 0.7 + hashtagScore * 0.3 AS relevanceScore
+          ORDER BY relevanceScore DESC, post.createdAt DESC
+          SKIP $skip
+          LIMIT $limit
+
+          // now load details for these posts
+          CALL {
+            WITH u, post
+            OPTIONAL MATCH (post)<-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User})
+            OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
+            OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
+            OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
+            OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(f:${NodeLabels.File})
+            ORDER BY r.order
+            
+            WITH post, creator, topic, liked,
+                COLLECT(DISTINCT hashtag.name) AS hashtags,
+                COLLECT(f) AS files
+                
+            RETURN post AS innerPost, creator, topic, liked, hashtags, files
+          }
+
+          RETURN innerPost AS post, creator, topic, liked, hashtags, files, relevanceScore, totalCount
+          ORDER BY relevanceScore DESC, post.createdAt DESC
+        `;
       queryParams = { userId, skip, limit };
     } else {
       cypherQuery = `
@@ -532,8 +652,10 @@ class PostService extends BaseService {
               COLLECT(DISTINCT followedPost) as followedPosts,
               COLLECT(DISTINCT topicPost) as topicPosts,
               COLLECT(DISTINCT hashtagPost) as hashtagPosts
+        SKIP $skip
+        LIMIT $limit
         
-        UNWIND (followedPosts + topicPosts + hashtagPosts + myPosts) as post
+        UNWIND apoc.coll.toSet(followedPosts + topicPosts + hashtagPosts + myPosts) as post
         WITH u, post, followedPosts, topicPosts, hashtagPosts, myPosts
         WHERE post IS NOT NULL
         
@@ -555,9 +677,7 @@ class PostService extends BaseService {
         ORDER BY r.order
 
         RETURN post, creator, topic, liked, hashtags, relevanceScore, files
-        ORDER BY relevanceScore DESC, post.createdAt DESC
-        SKIP $skip
-        LIMIT $limit
+        ORDER BY post.createdAt DESC, relevanceScore DESC
       `;
       queryParams = { userId, skip, limit };
     }
@@ -589,7 +709,9 @@ class PostService extends BaseService {
 
     cypherQuery = `
       MATCH (post: ${NodeLabels.Post} {isDeleted: false})<-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User} {id: $userId})
-
+      ORDER BY post.createdAt DESC
+      SKIP $skip
+      LIMIT $limit
       WITH post, creator
 
       OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
@@ -601,9 +723,6 @@ class PostService extends BaseService {
       
 
       RETURN post, creator, topic, liked, hashtags, orderedFiles AS files
-      ORDER BY post.createdAt DESC
-      SKIP $skip
-      LIMIT $limit
     `;
     queryParams = { userId, skip, limit };
 
