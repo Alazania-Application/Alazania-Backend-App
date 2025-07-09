@@ -6,14 +6,29 @@ import { body, query } from "express-validator";
 import slugify from "slugify";
 
 class InterestController {
-  getAllTopics = [
+  createTopic = [
+    ValidatorMiddleware.inputs([
+      body("name")
+    ]),
     async (req: Request, res: Response) => {
-      
-      const topics = await topicService.getAllTopics(req.query);
+      const topics = await topicService.createTopic(req.body);
 
       res.status(HttpStatusCode.Ok).json({
         success: true,
         data: topics,
+        message: "Topic created successfully",
+      });
+    },
+  ];
+
+  getAllTopics = [
+    async (req: Request, res: Response) => {
+      const {data, pagination} = await topicService.getAllTopics(req.query);
+
+      res.status(HttpStatusCode.Ok).json({
+        success: true,
+        data,
+        pagination,
         message: "Topics fetched successfully",
       });
     },
@@ -198,8 +213,7 @@ class InterestController {
 
   getUserFollowedHashtags = [
     async (req: Request, res: Response) => {
-
-      const result = await hashtagService.getUserFollowedHashtags(req.user?.id,);
+      const result = await hashtagService.getUserFollowedHashtags(req.user?.id);
 
       res.status(HttpStatusCode.Ok).json({
         success: true,
@@ -214,10 +228,27 @@ class InterestController {
       const query = {
         ...req.query,
         topicSlugs: [],
-        userId: req.user?.id,
+        userId: req.user?.id ?? "",
       };
 
       const result = await hashtagService.getHashtagsByTopic(query);
+
+      res.status(HttpStatusCode.Ok).json({
+        success: true,
+        data: result,
+        message: "Hashtags fetched successfully",
+      });
+    },
+  ];
+
+  getAllHashtags = [
+    async (req: Request, res: Response) => {
+      const query = {
+        ...req.query,
+        userId: req.user?.id ?? "",
+      };
+
+      const result = await hashtagService.getAllHashtags(query);
 
       res.status(HttpStatusCode.Ok).json({
         success: true,
@@ -231,7 +262,7 @@ class InterestController {
     async (req: Request, res: Response) => {
       const query = {
         ...req.query,
-        userId: req.user?.id,
+        userId: req.user?.id ?? "",
       };
 
       const result = await hashtagService.getTrendingHashtags(query);

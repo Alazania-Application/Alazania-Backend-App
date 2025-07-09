@@ -32,6 +32,10 @@ class UserService extends BaseService {
         "lastLogin",
         "following",
         "followers",
+        "isFollowing",
+        "isFollowingBack",
+        "blockedByUser",
+        "blockedUser",
         "bio",
         ...extraFields,
       ]);
@@ -43,17 +47,65 @@ class UserService extends BaseService {
   getUserById = async (id: string): Promise<UserResponseDto | null> => {
     const result = await this.readFromDB(
       `
-      MATCH (u:User {id: $id})
-      OPTIONAL MATCH (post:${NodeLabels.Post} {isDeleted:false})<-[:${RelationshipTypes.POSTED}]-(u) 
-      RETURN u, COUNT(post) AS totalPosts
+        MATCH (u:${NodeLabels.User} {id: $id})
+        RETURN u
       `,
       { id }
     );
     const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
+
+    const user = this.withDTO(doc) as IUser;
+
+    return user ?? null;
+  };
+
+  getUserProfile = async ({
+    currentUser = "",
+    userId = "",
+  }: {
+    currentUser: string;
+    userId: string;
+  }): Promise<UserResponseDto | null> => {
+    let cypherQuery = "";
+    if (currentUser && userId) {
+      cypherQuery = `
+        MATCH (currentUser:${NodeLabels.User} {id: $currentUser})
+        OPTIONAL MATCH (post:${NodeLabels.Post} {isDeleted:false})<-[:${RelationshipTypes.POSTED}]-(u) 
+
+        WITH u, COUNT(post) AS totalPosts
+
+        RETURN u, totalPosts
+      `;
+      return null;
+    } else {
+      `
+        MATCH (currentUser:${NodeLabels.User} {id: $currentUser})
+        MATCH (otherUser:${NodeLabels.User} {id: $userId})
+        OPTIONAL MATCH (otherUser)-[blockedByUser:${RelationshipTypes.BLOCKED}]->(currentUser)
+        OPTIONAL MATCH (currentUser)-[blockedUser:${RelationshipTypes.BLOCKED}]->(otherUser)
+        
+        WHERE otherUser IS NOT NULL AND (otherUser.isDemo IS NULL OR otherUser.isDemo <> true)
+        AND blockedByUser IS NULL 
+        
+        OPTIONAL MATCH (currentUser)-[followsUser:${RelationshipTypes.FOLLOWS}]->(otherUser)
+        OPTIONAL MATCH (otherUser)-[followedByUser:${RelationshipTypes.FOLLOWS}]->(currentUser)
+        OPTIONAL MATCH (post:${NodeLabels.Post} {isDeleted:false})<-[:${RelationshipTypes.POSTED}]-(u) 
+
+        RETURN u {.*, 
+        isFollowingBack: (followedByUser IS NOT NULL),
+        isFollowing: (followsUser IS NOT NULL),
+        blockedByUser: (blockedByUser IS NOT NULL),
+        blockedUser: (blockedUser IS NOT NULL),
+        } AS u, 
+        COUNT(post) AS totalPosts
+      `;
+    }
+    const result = await this.readFromDB(cypherQuery, { currentUser, userId });
+    const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
     const totalPosts =
       valueToNativeType(result?.records[0]?.get("totalPosts")) ?? 0;
 
-    const user = this.withDTO(doc) as IUser;
+    const user = this.withPublicDTO(doc) as IUser;
 
     return user
       ? {
@@ -63,10 +115,10 @@ class UserService extends BaseService {
       : null;
   };
 
-  getUserByQuery = async (query: string): Promise<UserResponseDto> => {
+  getUserByQuery = async (query: string = ""): Promise<UserResponseDto> => {
     const result = await this.readFromDB(
       `
-       MATCH (u:User)
+       MATCH (u:${NodeLabels.User})
        WHERE u.username = $query OR u.email = $query OR u.phone = $query OR u.id = $query
        RETURN u LIMIT 1
       `,
@@ -77,10 +129,12 @@ class UserService extends BaseService {
     return user;
   };
 
-  getUserByQueryWithCredentials = async (query: string): Promise<IUser> => {
+  getUserByQueryWithCredentials = async (
+    query: string = ""
+  ): Promise<IUser> => {
     const result = await this.readFromDB(
       `
-       MATCH (u:User)
+       MATCH (u:${NodeLabels.User})
        WHERE u.username = $query OR u.email = $query OR u.phone = $query OR u.id = $query
        RETURN u LIMIT 1
       `,
@@ -89,12 +143,12 @@ class UserService extends BaseService {
     return result.records.map((v) => v.get("u").properties)[0] as IUser;
   };
 
-  updateOnboardUser = async (id: string, payload: Partial<IUser>) => {
+  updateOnboardUser = async (id: string = "", payload: Partial<IUser> = {}) => {
     const updates = toDTO(payload, ["avatar", "username"]);
 
     const result = await this.writeToDB(
       `
-      MERGE (u:User {id: $id})
+      MERGE (u:${NodeLabels.User} {id: $id})
       SET u += $updates
       RETURN u
       `,
@@ -106,7 +160,7 @@ class UserService extends BaseService {
     return this.withDTO(doc);
   };
 
-  updateUser = async (id: string, payload: Partial<IUser>) => {
+  updateUser = async (id: string = "", payload: Partial<IUser> = {}) => {
     const updates = toDTO(payload, [
       "avatar",
       "firstName",
@@ -118,7 +172,7 @@ class UserService extends BaseService {
 
     const result = await this.writeToDB(
       `
-      MERGE (u:User {id: $id})
+      MERGE (u:${NodeLabels.User} {id: $id})
       SET u += $updates
       RETURN u
       `,
@@ -130,16 +184,20 @@ class UserService extends BaseService {
     return this.withDTO(doc);
   };
 
-  getUsers = async (params: IReadQueryParams & Record<string, any> = {}) => {
+  getUsers = async (
+    params: IReadQueryParams & Record<string, any> = {
+      userId: "",
+    }
+  ) => {
     const query = `
         MATCH (currentUser:${NodeLabels.User} {id: $userId})
         MATCH (other:${NodeLabels.User})
-        WHERE other.id <> $userId
-        AND other IS NOT NULL
+        OPTIONAL MATCH (currentUser)<-[blockedByUser:${RelationshipTypes.BLOCKED}]-(other)
+
+        WHERE other IS NOT NULL AND blockedByUser IS NULL 
+        AND other.id <> $userId
         AND (other.isDemo IS NULL OR other.isDemo <> true)
-          // AND NOT EXISTS {
-          //   MATCH (currentUser)-[:${RelationshipTypes.FOLLOWS}]->(other)
-          // }
+
         OPTIONAL MATCH (other)-[isFollowingBack:${RelationshipTypes.FOLLOWS}]->(currentUser)
         OPTIONAL MATCH (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(other)
    
@@ -159,7 +217,7 @@ class UserService extends BaseService {
   };
 
   getSuggestedUsers = async (
-    params: IReadQueryParams & Record<string, any> = {}
+    params: IReadQueryParams & Record<string, any> = { userId: "" }
   ) => {
     //   const query = `
     //   // Match users with shared interests
@@ -180,12 +238,15 @@ class UserService extends BaseService {
     const query = `
         MATCH (currentUser:${NodeLabels.User} {id: $userId})
         MATCH (other:${NodeLabels.User})
-        WHERE other.id <> $userId
-        AND other IS NOT NULL
+
+        OPTIONAL MATCH (currentUser)<-[blockedByUser:${RelationshipTypes.BLOCKED}]-(other)
+
+        WHERE other IS NOT NULL AND blockedByUser IS NULL 
+        AND other.id <> $userId
         AND (other.isDemo IS NULL OR other.isDemo <> true)
-          AND NOT EXISTS {
-            MATCH (currentUser)-[:${RelationshipTypes.FOLLOWS}]->(other)
-          }
+        AND NOT EXISTS {
+          MATCH (currentUser)-[:${RelationshipTypes.FOLLOWS}]->(other)
+        }
         RETURN other
         LIMIT $limit
       `;
@@ -193,15 +254,132 @@ class UserService extends BaseService {
     const result = await this.readFromDB(query, params);
 
     return result.records.map((v) => ({
-      ...this.withPublicDTO(v.get("other")?.properties)
+      ...this.withPublicDTO(v.get("other")?.properties),
     })) as IUser[];
   };
 
-  followUser = async (currentUserId: string, userToFollowId: string) => {
+  blockUser = async (
+    currentUserId: string = "",
+    userToBlockId: string = ""
+  ) => {
+    if (currentUserId == userToBlockId) {
+      return;
+    }
+
+    const query = `
+      MATCH (currentUser: ${NodeLabels.User} {id: $currentUserId})
+      MATCH (userToBlock: ${NodeLabels.User} {id: $userToBlockId})
+
+      OPTIONAL MATCH (userToBlock)<-[wasFollowingRel:${RelationshipTypes.FOLLOWS}]-(currentUser)
+      OPTIONAL MATCH (userToBlock)-[wasFollowingBackRel:${RelationshipTypes.FOLLOWS}]->(currentUser)
+
+      WHERE userToBlock IS NOT NULL
+        AND (userToBlock.isDemo IS NULL OR userToBlock.isDemo <> true)
+
+      MERGE (currentUser)-[r:${RelationshipTypes.BLOCKED}]->(userToBlock)
+      ON CREATE SET
+        r.timestamp = datetime($timestamp),
+        r.wasFollowing = (wasFollowingRel IS NOT NULL),
+        r.wasFollowingBack = (wasFollowingBackRel IS NOT NULL)
+      
+      // Use a WITH clause to carry over the booleans *before* deleting the relationships
+      WITH currentUser, userToBlock, r,
+           (wasFollowingRel IS NOT NULL) AS currentUserWasFollowing,
+           (wasFollowingBackRel IS NOT NULL) AS userToBlockWasFollowingBack,
+           wasFollowingRel, wasFollowingBackRel // Keep refs for deletion
+
+      // Delete the FOLLOWS relationships if they existed
+      DELETE wasFollowingRel, wasFollowingBackRel
+
+      // Conditionally decrement counts based on the existence of the deleted relationships
+      // If currentUser was following userToBlock:
+      FOREACH (x IN CASE WHEN currentUserWasFollowing THEN [1] ELSE [] END |
+          SET currentUser.following = coalesce(currentUser.following, 0) - 1
+          SET userToBlock.followers = coalesce(userToBlock.followers, 0) - 1
+      )
+
+      // If userToBlock was following currentUser:
+      FOREACH (x IN CASE WHEN userToBlockWasFollowingBack THEN [1] ELSE [] END |
+          SET userToBlock.following = coalesce(userToBlock.following, 0) - 1
+          SET currentUser.followers = coalesce(currentUser.followers, 0) - 1
+      )
+
+      RETURN r
+    `;
+
+    await this.writeToDB(query, {
+      currentUserId,
+      userToBlockId,
+      timestamp: new Date().toISOString(),
+    });
+  };
+
+  unBlockUser = async (
+    currentUserId: string = "",
+    userToUnBlockId: string = ""
+  ) => {
+    if (currentUserId == userToUnBlockId) {
+      return;
+    }
+    const query = `
+      MATCH (currentUser:${NodeLabels.User} {id: $currentUserId})
+      MATCH (userToUnblock:${NodeLabels.User} {id: $userToUnBlockId})
+      MATCH (currentUser)-[blockedRel:${RelationshipTypes.BLOCKED}]->(userToUnblock)
+
+      WHERE userToUnblock IS NOT NULL
+        AND (userToUnblock.isDemo IS NULL OR userToUnblock.isDemo <> true)
+
+      WITH currentUser, userToUnblock,
+           blockedRel.wasFollowing AS wasFollowing,
+           blockedRel.wasFollowingBack AS wasFollowingBack,
+           blockedRel
+
+     
+      DELETE blockedRel
+
+      //  re-establish the FOLLOWS relationship from currentUser to userToUnblock
+      //   We use FOREACH with a CASE statement to run the MERGE only if 'wasFollowing' was true.
+      //   MERGE is used to create the relationship only if it doesn't already exist (idempotency).
+      FOREACH (x IN CASE WHEN wasFollowing THEN [1] ELSE [] END |
+          MERGE (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(userToUnblock)
+          ON CREATE SET
+            isFollowing.timestamp = datetime($timestamp), 
+            userToUnblock.followers = coalesce(userToUnblock.followers, 0) + 1,
+            currentUser.following = coalesce(currentUser.following, 0) + 1
+      )
+
+      // re-establish the FOLLOWS relationship from userToUnblock to currentUser
+      FOREACH (x IN CASE WHEN wasFollowingBack THEN [1] ELSE [] END |
+          MERGE (userToUnblock)-[isFollowingBack:${RelationshipTypes.FOLLOWS}]->(currentUser)
+          ON CREATE SET
+            isFollowingBack.timestamp = datetime($timestamp), 
+            currentUser.followers = coalesce(currentUser.followers, 0) + 1,
+            userToUnblock.following = coalesce(userToUnblock.following, 0) + 1
+      )
+            
+      RETURN currentUser, userToUnblock,
+             (wasFollowing IS NOT NULL AND wasFollowing) AS restoredFollowing,
+             (wasFollowingBack IS NOT NULL AND wasFollowingBack) AS restoredFollowingBack
+    `;
+
+    await this.writeToDB(query, {
+      currentUserId,
+      userToUnBlockId,
+      timestamp: new Date().toISOString(),
+    });
+  };
+
+  followUser = async (
+    currentUserId: string = "",
+    userToFollowId: string = ""
+  ) => {
     const query = `
       MATCH (currentUser: ${NodeLabels.User} {id: $currentUserId})
       MATCH (userToFollow: ${NodeLabels.User} {id: $userToFollowId})
       OPTIONAL MATCH (userToFollow)-[isFollowingBack:${RelationshipTypes.FOLLOWS}]->(currentUser)
+
+      WHERE userToFollow IS NOT NULL
+        AND (userToFollow.isDemo IS NULL OR userToFollow.isDemo <> true)
 
       MERGE (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(userToFollow)
         ON CREATE SET 
@@ -229,11 +407,17 @@ class UserService extends BaseService {
     return user;
   };
 
-  unfollowUser = async (currentUserId: string, userToUnfollowId: string) => {
+  unfollowUser = async (
+    currentUserId: string = "",
+    userToUnfollowId: string = ""
+  ) => {
     const query = `
       MATCH (currentUser: ${NodeLabels.User} {id: $currentUserId})
       MATCH (userToUnfollow: ${NodeLabels.User} {id: $userToUnfollowId})
       OPTIONAL MATCH (userToUnfollow)-[isFollowingBack:${RelationshipTypes.FOLLOWS}]->(currentUser)
+
+      WHERE userToUnfollow IS NOT NULL
+        AND (userToUnfollow.isDemo IS NULL OR userToUnfollow.isDemo <> true)
       
       MATCH (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(userToUnfollow)
       DELETE isFollowing
@@ -260,12 +444,19 @@ class UserService extends BaseService {
     return user;
   };
 
-  getUserFollowing = async (currentUserId: string, userToMatchId: string) => {
+  getUserFollowing = async (
+    currentUserId: string = "",
+    userToMatchId: string = ""
+  ) => {
     const query = `
       MATCH (currentUser: ${NodeLabels.User} {id: $currentUserId})
       MATCH (userToMatch: ${NodeLabels.User} {id: $userToMatchId})
+      
+      OPTIONAL MATCH (currentUser)<-[blockedByUser:${RelationshipTypes.BLOCKED}]-(userToMatch)
+      WHERE userToMatch IS NOT NULL AND blockedByUser IS NULL 
 
       MATCH (user: ${NodeLabels.User})<-[:${RelationshipTypes.FOLLOWS}]-(userToMatch)
+
       WHERE user.id <> $userToMatchId
         AND (user.isDemo IS NULL OR user.isDemo <> true)
 
@@ -298,10 +489,16 @@ class UserService extends BaseService {
     return users;
   };
 
-  getUserFollowers = async (currentUserId: string, userToMatchId: string) => {
+  getUserFollowers = async (
+    currentUserId: string = "",
+    userToMatchId: string = ""
+  ) => {
     const query = `
       MATCH (currentUser: ${NodeLabels.User} {id: $currentUserId})
       MATCH (userToMatch: ${NodeLabels.User} {id: $userToMatchId})
+
+      OPTIONAL MATCH (currentUser)<-[blockedByUser:${RelationshipTypes.BLOCKED}]-(userToMatch)
+      WHERE userToMatch IS NOT NULL AND blockedByUser IS NULL 
 
       MATCH (user: ${NodeLabels.User})-[:${RelationshipTypes.FOLLOWS}]->(userToMatch)
       WHERE user.id <> $userToMatchId
@@ -335,7 +532,7 @@ class UserService extends BaseService {
     return users;
   };
 
-  getMyFollowing = async (currentUserId: string) => {
+  getMyFollowing = async (currentUserId: string = "") => {
     const query = `
       MATCH (currentUser: ${NodeLabels.User} {id: $currentUserId})
       MATCH (userToMatch: ${NodeLabels.User})
@@ -371,7 +568,7 @@ class UserService extends BaseService {
     return users;
   };
 
-  getMyFollowers = async (currentUserId: string) => {
+  getMyFollowers = async (currentUserId: string = "") => {
     const query = `
       MATCH (currentUser: ${NodeLabels.User} {id: $currentUserId})
       MATCH (userToMatch: ${NodeLabels.User})

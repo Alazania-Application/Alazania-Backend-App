@@ -20,6 +20,10 @@ export interface IUser extends BaseModel {
 
   isFollowingBack?: boolean;
   isFollowing?: boolean;
+  
+  blockedByUser?: boolean;
+  blockedUser?: boolean;
+
 
   following?: number;
   followers?: number;

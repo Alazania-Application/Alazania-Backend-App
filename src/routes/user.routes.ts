@@ -23,6 +23,12 @@ userRouter.get(
   userController.getUsers
 );
 
+userRouter.get(
+  "/:id",
+  authMiddleWare.protectRoute,
+  userController.getUserProfile
+);
+
 userRouter.put(
   "/onboard/update",
   authMiddleWare.protectRoute,
@@ -49,6 +55,18 @@ userRouter.patch(
   "/unfollow/:userId",
   authMiddleWare.protectRoute,
   userController.unfollowUser
+);
+
+userRouter.patch(
+  "/block/:userId",
+  authMiddleWare.protectRoute,
+  userController.blockUser
+);
+
+userRouter.patch(
+  "/unblock/:userId",
+  authMiddleWare.protectRoute,
+  userController.unblockUser
 );
 
 userRouter.get(

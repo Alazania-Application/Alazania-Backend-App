@@ -9,6 +9,6 @@ export interface Topic extends BaseModel {
   
   export interface CreateTopicInput {
     name: string
-    description: string
+    description?: string
   }
   

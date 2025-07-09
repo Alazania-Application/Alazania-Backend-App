@@ -1,7 +1,12 @@
 import { UserResponseDto } from "@/models";
 import { uploadFile } from "@/middlewares/upload.middleware";
 import ValidatorMiddleware from "@/middlewares/validator.middleware";
-import { hashtagService, postService, topicService, userService } from "@/services";
+import {
+  hashtagService,
+  postService,
+  topicService,
+  userService,
+} from "@/services";
 import { HttpStatusCode } from "axios";
 import { NextFunction, Request, Response } from "express";
 import { body, param } from "express-validator";
@@ -11,14 +16,13 @@ class UserController {
   getProfile = async (req: Request, res: Response, next: NextFunction) => {
     const user: UserResponseDto = req.user;
 
-    
-    const postCount = await postService.getPostCount(user?.id)
+    const postCount = await postService.getPostCount(user?.id);
 
     res.status(HttpStatusCode.Ok).json({
       success: true,
       data: {
         ...user,
-        totalPosts: postCount
+        totalPosts: postCount,
       },
       message: "User profile fetched successfully",
     });
@@ -150,6 +154,24 @@ class UserController {
     },
   ];
 
+  getUserProfile = [
+    ValidatorMiddleware.inputs([
+      param("id", "A valid user id is required").exists().isUUID(),
+    ]),
+    async (req: Request, res: Response) => {
+      const currentUser = req?.user?.id;
+      const userId = req?.params?.id;
+
+      const users = await userService.getUserProfile({ currentUser, userId });
+
+      res.status(HttpStatusCode.Ok).json({
+        success: true,
+        data: users,
+        message: "Users fetched successfully",
+      });
+    },
+  ];
+
   getSuggestedUsers = [
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
@@ -160,6 +182,40 @@ class UserController {
         success: true,
         data: users,
         message: "Users fetched successfully",
+      });
+    },
+  ];
+
+  blockUser = [
+    ValidatorMiddleware.inputs([
+      param("userId", "User id is required").exists().isUUID(),
+    ]),
+    async (req: Request, res: Response) => {
+      const userId = req?.user?.id;
+
+      const data = await userService.blockUser(userId, req.params.userId);
+
+      res.status(HttpStatusCode.Ok).json({
+        success: true,
+        data,
+        message: "User blocked successfully",
+      });
+    },
+  ];
+
+  unblockUser = [
+    ValidatorMiddleware.inputs([
+      param("userId", "User id is required").exists().isUUID(),
+    ]),
+    async (req: Request, res: Response) => {
+      const userId = req?.user?.id;
+
+      const data = await userService.unBlockUser(userId, req.params.userId);
+
+      res.status(HttpStatusCode.Ok).json({
+        success: true,
+        data,
+        message: "User unblocked successfully",
       });
     },
   ];

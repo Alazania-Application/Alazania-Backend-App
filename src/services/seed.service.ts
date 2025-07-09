@@ -75,8 +75,14 @@ class SeedService extends BaseService {
         const userSearch = tx.run(
           `CREATE FULLTEXT INDEX user_search_index IF NOT EXISTS FOR (u:${NodeLabels.User}) ON EACH [u.username, u.firstname, u.lastname, u.email]`
         );
+        const hashtagSearch = tx.run(
+          `CREATE FULLTEXT INDEX hashtag_search_index IF NOT EXISTS FOR (h:${NodeLabels.Hashtag}) ON EACH [h.slug, h.name]`
+        );
+        const topicSearch = tx.run(
+          `CREATE FULLTEXT INDEX topic_search_index IF NOT EXISTS FOR (t:${NodeLabels.Topic}) ON EACH [t.slug, t.name]`
+        );
 
-        await Promise.all([...contraintPromises, ...indexPromises, userSearch]);
+        await Promise.all([...contraintPromises, ...indexPromises, userSearch, hashtagSearch, topicSearch]);
       })
       .then(async () => {
         console.log("Database initialized with constraints");

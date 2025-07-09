@@ -1,16 +1,21 @@
 import { NodeLabels, RelationshipTypes } from "@/enums";
 import BaseService from "./base.service";
 import { CreateTopicInput, Topic } from "@/models";
-import { IReadQueryParams } from "@/utils";
+import { IReadQueryParams, toNativeTypes } from "@/utils";
 import slugify from "slugify";
 
 class TopicService extends BaseService {
-  createTopic = async (input: CreateTopicInput): Promise<Topic> => {
+  createTopic = async (
+    input: CreateTopicInput = {
+      description: "",
+      name: "",
+    }
+  ): Promise<Topic> => {
     const slug = slugify(input.name, {
       trim: true,
       lower: true,
     });
-    const now = new Date()
+    const now = new Date();
 
     const result = await this.writeToDB(
       `
@@ -29,47 +34,58 @@ class TopicService extends BaseService {
         slug,
         name: String(input.name).trim(),
         description: input.description,
-        createdAt: now.toISOString()
+        createdAt: now.toISOString(),
       }
     );
 
     const topicNode = result.records[0].get("t")?.properties as Topic;
-    return {
+    return toNativeTypes({
       name: topicNode?.name,
       slug: topicNode?.slug,
       description: topicNode?.description,
       // popularity: (topicNode?.popularity as any)?.toInt(),
-    };
+    }) as Topic;
   };
 
-  getAllTopics = async (params?: IReadQueryParams): Promise<Topic[]> => {
-    
-    const result = await this.readFromDB(
+  getAllTopics = async (params: IReadQueryParams = {}): Promise<{data:Topic[], pagination: any}> => {
+    const { result, pagination } = await this.readFromDB(
       `
         MATCH (t:${NodeLabels.Topic})
-        WHERE $search IS NULL OR trim($search) = "" OR t.slug STARTS WITH toLower(trim($search))
-        RETURN t
-        ORDER BY t.popularity DESC
+        WITH t, COUNT(t) AS totalCount
+        // NOTE compare popularity either between follows or posts
+        OPTIONAL MATCH (t)<-[:${RelationshipTypes.BELONGS_TO}]-(p:${NodeLabels.Post} {isDeleted: false})
+
+        WITH t, totalCount, COUNT(p) AS usageCount, COALESCE($search, null) AS search
+
+        WHERE search IS NULL OR trim(search) = "" OR t.slug STARTS WITH toLower(trim(search))
+        RETURN t, totalCount
+        ORDER BY usageCount DESC
         SKIP $skip
         LIMIT $limit
       `,
-      params
+      params,
+      true
     );
 
-    return result.records.map((record) => {
+    const data = result.records.map((record) => {
       const topicNode = record.get("t")?.properties as Topic;
-      return {
+      return toNativeTypes({
         name: topicNode?.name,
         slug: topicNode?.slug,
         description: topicNode?.description,
         // popularity: (topicNode?.popularity as any)?.toInt(),
-      };
+      }) as Topic;
     });
+
+    return {
+      data,
+      pagination,
+    };
   };
 
   addUserInterests = async (
-    userId: string,
-    topicSlugs: string[],
+    userId: string = "",
+    topicSlugs: string[] = [],
     interestLevel = 5
   ): Promise<void> => {
     await this.writeToDB(
@@ -102,10 +118,9 @@ class TopicService extends BaseService {
     );
   };
 
-
   removeUserInterests = async (
-    userId: string,
-    topicSlugs: string[],
+    userId: string = "",
+    topicSlugs: string[] = []
   ): Promise<void> => {
     await this.writeToDB(
       `
@@ -119,14 +134,19 @@ class TopicService extends BaseService {
   };
 
   getUserTopics = async (
-    userId: string,
+    userId: string = "",
     params: IReadQueryParams = {}
   ): Promise<Topic[]> => {
     const result = await this.readFromDB(
       `
         MATCH (u:${NodeLabels.User} {id: $userId})-[:${RelationshipTypes.INTERESTED_IN}]->(t:${NodeLabels.Topic})
+        OPTIONAL MATCH (t)<-[:${RelationshipTypes.BELONGS_TO}]-(p:${NodeLabels.Post} {isDeleted: false})
+
+        WITH t, count(p) AS usageCount, COALESCE($search, null) AS search
+
+        WHERE search IS NULL OR trim(search) = "" OR t.slug STARTS WITH toLower(trim(search))
         RETURN t
-        ORDER BY t.popularity ${params?.sort}
+        ORDER BY usageCount ${params?.sort}
         SKIP toInteger($skip)
         LIMIT toInteger($limit)
       `,
@@ -135,25 +155,26 @@ class TopicService extends BaseService {
 
     return result.records.map((record) => {
       const topicNode = record.get("t")?.properties as Topic;
-      return {
+      return toNativeTypes({
         name: topicNode?.name,
         slug: topicNode?.slug,
         description: topicNode?.description,
         // popularity: (topicNode?.popularity as any)?.toInt(),
-      };
+      }) as Topic;
     });
   };
 
   getUserUnselectedTopics = async (
-    userId: string,
+    userId: string = "",
     params: IReadQueryParams = {}
   ): Promise<Topic[]> => {
-    console.log({ userId });
     const result = await this.readFromDB(
       `
         MATCH (t:${NodeLabels.Topic})
         MATCH (u:${NodeLabels.User} {id: $userId})
         WHERE NOT (u)-[:${RelationshipTypes.INTERESTED_IN}]->(t)
+        WITH t, COALESCE($search, null) AS search
+        WHERE search IS NULL OR trim(search) = "" OR t.slug STARTS WITH toLower(trim(search))
         RETURN t
         ORDER BY t.popularity ${params?.sort}
         SKIP toInteger($skip)
@@ -164,12 +185,12 @@ class TopicService extends BaseService {
 
     return result.records.map((record) => {
       const topicNode = record.get("t")?.properties as Topic;
-      return {
+      return toNativeTypes({
         name: topicNode?.name,
         slug: topicNode?.slug,
         description: topicNode?.description,
         // popularity: (topicNode?.popularity as any)?.toInt(),
-      };
+      }) as Topic;
     });
   };
 }
