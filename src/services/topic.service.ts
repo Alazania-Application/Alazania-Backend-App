@@ -47,6 +47,7 @@ class TopicService extends BaseService {
     const result = await this.readFromDB(
       `
         MATCH (t:${NodeLabels.Topic})
+        WHERE $search IS NULL OR trim($search) = "" OR t.slug STARTS WITH toLower(trim($search))
         RETURN t
         ORDER BY t.popularity DESC
         SKIP $skip
