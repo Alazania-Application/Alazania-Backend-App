@@ -38,7 +38,7 @@ class TopicService extends BaseService {
       }
     );
 
-    const topicNode = result.records[0].get("t")?.properties as Topic;
+    const topicNode = result.records[0].get("topic")?.properties as Topic;
     return toNativeTypes({
       name: topicNode?.name,
       slug: topicNode?.slug,
