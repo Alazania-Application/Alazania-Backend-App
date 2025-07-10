@@ -325,8 +325,8 @@ class PostService extends BaseService {
         MATCH (u:${NodeLabels.User} {id: $userId})
         MATCH (p:${NodeLabels.Post} {id: $postId, isDeleted: false})
 
-        MERGE (u)-[r:${RelationshipTypes.LIKED}]->(p)
-        ON CREATE SET r.timestamp = datetime($timestamp), p.likes = coalesce(p.likes, 0) + 1
+        MERGE (u)-[liked:${RelationshipTypes.LIKED}]->(p)
+        ON CREATE SET liked.timestamp = datetime($timestamp), p.likes = coalesce(p.likes, 0) + 1
 
         with p
 
