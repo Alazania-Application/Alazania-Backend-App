@@ -215,7 +215,7 @@ class PostController {
   getMyPosts = async (req: Request, res: Response) => {
     const userId = req?.user?.id;
 
-    const { posts: data, pagination } = await postService.getUserPosts(
+    const { posts: data, pagination } = await postService.getMyPosts(
       userId,
       req.query
     );
@@ -236,9 +236,11 @@ class PostController {
         .withMessage("Invalid user ID"),
     ]),
     async (req: Request, res: Response) => {
+      const loggedInUser = req?.user?.id;
       const userId = req?.params?.id;
 
       const { posts: data, pagination } = await postService.getUserPosts(
+        loggedInUser,
         userId,
         req.query
       );

@@ -11,6 +11,7 @@ import {
   isTime,
   int,
 } from "neo4j-driver";
+import slugify from "slugify";
 /**
  * Generates jwt token
  * @param payload
@@ -166,7 +167,7 @@ export interface IPagination {
 export const getPaginationFilters = ({
   sort = "DESC",
   page = 1,
-  limit = 10,
+  limit = 25,
   ...otherQueries
 }: IReadQueryParams): IReadQueryParams & Record<string, any> => {
   const max_limit = 100;
@@ -178,14 +179,14 @@ export const getPaginationFilters = ({
     typeof Number(page || 1) == "number" ? Number(page || 1) : 1;
 
   const sanitizedLimit =
-    typeof Number(limit || 10) == "number" ? Number(limit || 10) : 10;
+    typeof Number(limit || 25) == "number" ? Number(limit || 25) : 25;
 
   const skip = Number(
     (sanitizedPage - 1) * Math.min(sanitizedLimit, max_limit)
   );
 
   // const formattedOtherQueries
-  const searchQuery = (otherQueries as any)?.search ?? ""
+  const searchQuery = (otherQueries as any)?.search ?? "";
   const search =
     !searchQuery || searchQuery.trim() === ""
       ? null
@@ -197,7 +198,7 @@ export const getPaginationFilters = ({
     sort: sanitizedSort,
     skip: int(skip),
     ...otherQueries,
-    search
+    search,
   };
 };
 
@@ -209,7 +210,13 @@ export const isIdToken = (token: string) => {
 export const extractHashtags = (text: string) => {
   return [
     ...new Set(
-      (text.match(/#\w+/g) || []).map((tag) => tag.slice(1).toLowerCase())
+      (text.match(/#\w+/g) || []).map((tag) =>
+        slugify(tag, {
+          trim: true,
+          lower: true,
+          remove: /#/g
+        })
+      )
     ),
   ];
 };

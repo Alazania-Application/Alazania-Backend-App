@@ -11,6 +11,8 @@ export const USER_TOKEN = (process.env.USER_TOKEN as string) || "";
 export const JWT_KEY = process.env.JWT_KEY as StringValue;
 export const JWT_EXPIRY = process.env.JWT_EXPIRY as StringValue;
 export const JWT_COOKIE_EXPIRY = process.env.JWT_COOKIE_EXPIRY as StringValue;
+export const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET as StringValue;
+export const REFRESH_TOKEN_SECRET = process.env.REFRESH_TOKEN_SECRET as StringValue;
 export const VERIFICATION_TOKEN_EXPIRY = process.env
   .VERIFICATION_TOKEN_EXPIRY as StringValue;
 

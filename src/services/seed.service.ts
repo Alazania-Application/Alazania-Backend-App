@@ -102,17 +102,17 @@ class SeedService extends BaseService {
   private seedRelationshipTypes = async (tx: ManagedTransaction) => {
     // Ensure two dummy nodes exist
     await tx.run(`
-          MERGE (a:${NodeLabels.User} {id: "_seedA", isDemo: true})
-          MERGE (b:${NodeLabels.User} {id: "_seedB", isDemo: true})
-          MERGE (a)-[:${RelationshipTypes.FOLLOWS} {isDemo: true}]->(b)
+          MERGE (a:${NodeLabels.DummyUser} {id: "_seedA", isDummy: true})
+          MERGE (b:${NodeLabels.DummyUser} {id: "_seedB", isDummy: true})
+          MERGE (a)-[:${RelationshipTypes.FOLLOWS} {isDummy: true}]-(b)
         `);
 
     // Create one relationship of each type between the dummy nodes
     const relationshipPromises = Object.values(RelationshipTypes).map(
       (relType) =>
         tx.run(`
-            MATCH (a:${NodeLabels.User} {id: "_seedA"}), (b:${NodeLabels.User} {id: "_seedB"})
-            MERGE (a)-[:${relType} {isDemo: true}]->(b)
+            MATCH (a:${NodeLabels.DummyUser} {id: "_seedA"}), (b:${NodeLabels.DummyUser} {id: "_seedB"})
+            MERGE (a)-[:${relType} {isDummy: true}]->(b)
           `)
     );
 
