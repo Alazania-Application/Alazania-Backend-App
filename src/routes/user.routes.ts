@@ -75,6 +75,7 @@ userRouter.patch(
   userController.reportUser
 );
 
+
 userRouter.get(
   "/followers/:userId",
   authMiddleWare.protectRoute,
