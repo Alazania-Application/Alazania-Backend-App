@@ -22,6 +22,7 @@ export enum RelationshipTypes {
   BELONGS_TO = "BELONGS_TO", // Post -> TOPIC
   HAS_HASHTAG = "HAS_HASHTAG", // Post -> HASHTAG
   ENGAGES_WITH = "ENGAGES_WITH", // User -> POST
+  MENTIONED = "MENTIONED", // Post -> user
   
   // POST-RELATIONSHIPS
   INITIALIZED_POST_SESSION = "INITIALIZED_POST_SESSION", // User -> POST

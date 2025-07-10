@@ -4,6 +4,7 @@ import { NodeLabels, RelationshipTypes } from "@/enums";
 import {
   ErrorResponse,
   extractHashtags,
+  extractMentions,
   IPagination,
   IReadQueryParams,
   toDTO,
@@ -140,6 +141,7 @@ class PostService extends BaseService {
 
   async createPost(payload: CreatePostInput): Promise<Post | null> {
     const hashtags = extractHashtags(payload.caption);
+    const mentions = extractMentions(payload.caption);
 
     const now = new Date();
 
@@ -151,6 +153,7 @@ class PostService extends BaseService {
       createdAt: now.toISOString(),
       topicSlug: payload?.topicSlug || null,
       hashtags,
+      mentions
     };
 
     // Create the post
@@ -222,6 +225,14 @@ class PostService extends BaseService {
         ON CREATE SET 
           r.interestLevel = 5,
           r.since = datetime()
+
+        WITH p, u, $mentions AS mentions
+        // // Handle user mentions
+
+        UNWIND COALESCE(mentions, []) AS mention
+        OPTIONAL MATCH(userMentioned:${NodeLabels.User} {username: mention})
+        WHERE userMentioned IS NOT NULL
+        MERGE (p)-[:${RelationshipTypes.MENTIONED} {timestamp: datetime($createdAt)}]->(userMentioned)
 
         RETURN p AS post, u AS creator
       `,

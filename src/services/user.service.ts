@@ -187,6 +187,7 @@ class UserService extends BaseService {
   getUsers = async (
     params: IReadQueryParams & Record<string, any> = {
       userId: "",
+      search: "",
     }
   ) => {
     const query = `
@@ -194,11 +195,15 @@ class UserService extends BaseService {
         MATCH (other:${NodeLabels.User})
         OPTIONAL MATCH (currentUser)<-[blockedByUser:${RelationshipTypes.BLOCKED}]-(other)
 
-        WHERE other IS NOT NULL AND blockedByUser IS NULL 
+        WITH other, currentUser, COALESCE($search, null) AS search
+
+        WHERE other IS NOT NULL AND blockedByUser IS NULL
+        AND (search IS NULL OR trim(search) = "" OR other.name CONTAINS toLower(trim(search)) OR other.username CONTAINS toLower(trim(search)))
         AND other.id <> $userId
 
         OPTIONAL MATCH (other)-[isFollowingBack:${RelationshipTypes.FOLLOWS}]->(currentUser)
         OPTIONAL MATCH (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(other)
+ 
    
         RETURN other, isFollowing, isFollowingBack
         LIMIT $limit
@@ -259,7 +264,7 @@ class UserService extends BaseService {
   reportUser = async (
     currentUserId: string = "",
     userToReport: string = "",
-    reason: string = "",
+    reason: string = ""
   ) => {
     if (currentUserId == userToReport) {
       return;
