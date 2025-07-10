@@ -333,6 +333,7 @@ class PostService extends BaseService {
         MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(p)
         OPTIONAL MATCH (p)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
         OPTIONAL MATCH (p)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
+        
         OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(f:${NodeLabels.File})
         ORDER BY r.order
 
@@ -363,6 +364,7 @@ class PostService extends BaseService {
         MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(p)
         OPTIONAL MATCH (p)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
         OPTIONAL MATCH (p)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
+        
         OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(f:${NodeLabels.File})
         ORDER BY r.order
 
@@ -690,6 +692,7 @@ class PostService extends BaseService {
       OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
       OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(files:${NodeLabels.File})
       ORDER BY r.order
+      
       WITH post, creator, topic, liked, COLLECT(DISTINCT hashtag.name) AS hashtags, COLLECT(files) AS orderedFiles, r, totalCount
       
       
@@ -758,6 +761,7 @@ class PostService extends BaseService {
       OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
       OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(files:${NodeLabels.File})
       ORDER BY r.order
+
       WITH post, creator, topic, liked, COLLECT(DISTINCT hashtag.name) AS hashtags, COLLECT(files) AS orderedFiles, r, totalCount
       
       
