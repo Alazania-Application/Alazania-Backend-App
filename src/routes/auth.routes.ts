@@ -4,6 +4,7 @@ import { Router } from "express";
 export const authRouter = Router();
 
 // USER AUTH ROUTES
+authRouter.get("/user/refresh-token", authController.refreshToken);
 authRouter.post("/user/register", authController.registerUser);
 authRouter.post("/user/login", authController.loginUser);
 authRouter.post("/user/forgot-password", authController.forgotUserPassword);

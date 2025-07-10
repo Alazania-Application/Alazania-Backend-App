@@ -69,6 +69,13 @@ userRouter.patch(
   userController.unblockUser
 );
 
+userRouter.patch(
+  "/report/:userId",
+  authMiddleWare.protectRoute,
+  userController.reportUser
+);
+
+
 userRouter.get(
   "/followers/:userId",
   authMiddleWare.protectRoute,

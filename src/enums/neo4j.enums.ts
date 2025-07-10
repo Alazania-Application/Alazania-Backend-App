@@ -16,8 +16,9 @@ export enum RelationshipTypes {
   FOLLOWS_HASHTAG = "FOLLOWS_HASHTAG", //User -> hashtags
   INTERESTED_IN = "INTERESTED_IN", //User -> Topic
   FOLLOWS = "FOLLOWS", //User -> User
+  REPORTED_USER = "REPORTED_USER", //User -> User
+  REPORTED_POST = "REPORTED_POST", //User -> User
   BLOCKED = "BLOCKED", //User -> User
-  REPORTED = "REPORTED", //User -> User
   BELONGS_TO = "BELONGS_TO", // Post -> TOPIC
   HAS_HASHTAG = "HAS_HASHTAG", // Post -> HASHTAG
   ENGAGES_WITH = "ENGAGES_WITH", // User -> POST

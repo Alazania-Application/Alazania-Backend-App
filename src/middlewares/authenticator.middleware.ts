@@ -4,6 +4,7 @@ import { asyncHandler } from "./async.middleware";
 import { ErrorResponse } from "../utils";
 import { IUser } from "@/models";
 import { authService, userService } from "@/services";
+import { ACCESS_TOKEN_SECRET } from "@/config";
 
 /**
  * Description placeholder
@@ -31,36 +32,36 @@ class AuthenticatorMiddleware {
    * @param res
    * @param next
    */
-  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-  jwt = asyncHandler(
-    async (req: Request, res: Response, next: NextFunction) => {
-      let token;
+  // // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+  // jwt = asyncHandler(
+  //   async (req: Request, res: Response, next: NextFunction) => {
+  //     let token;
 
-      // Check for token in Authorization header if not found in cookies
-      if (
-        !token &&
-        req.headers.authorization &&
-        req.headers.authorization.startsWith("Bearer")
-      ) {
-        token = req.headers.authorization.split(" ")[1];
-      }
+  //     // Check for token in Authorization header if not found in cookies
+  //     if (
+  //       !token &&
+  //       req.headers.authorization &&
+  //       req.headers.authorization.startsWith("Bearer")
+  //     ) {
+  //       token = req.headers.authorization.split(" ")[1];
+  //     }
 
-      // Make sure token exists
-      if (!token) {
-        throw this.AuthenticateError();
-      }
+  //     // Make sure token exists
+  //     if (!token) {
+  //       throw this.AuthenticateError();
+  //     }
 
-      try {
-        const decode = authService.verifyJwtToken(token);
+  //     try {
+  //       const decode = authService.verifyAuthToken(token, ACCESS_TOKEN_SECRET);
 
-        // @ts-ignore
-        req.id = decode.id;
-        next();
-      } catch (err) {
-        throw this.AuthenticateError();
-      }
-    }
-  );
+  //       // @ts-ignore
+  //       req.id = decode.id;
+  //       next();
+  //     } catch (err) {
+  //       throw this.AuthenticateError();
+  //     }
+  //   }
+  // );
 
   /**
    * Finds and verifies the jwt token
@@ -88,7 +89,7 @@ class AuthenticatorMiddleware {
       }
 
       try {
-        const decode = authService.verifyJwtToken(token);
+        const decode = authService.verifyAuthToken(token, ACCESS_TOKEN_SECRET);
 
         // @ts-ignore
         req.id = decode.id;

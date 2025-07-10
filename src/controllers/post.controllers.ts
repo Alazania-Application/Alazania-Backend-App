@@ -203,14 +203,12 @@ class PostController {
 
       const data = await postService.initializePostSession(userId);
 
-
       res.status(201).json({
         message: "Post session initialized successfully!",
         data,
       });
     },
   ];
-
 
   getMyPosts = async (req: Request, res: Response) => {
     const userId = req?.user?.id;
@@ -287,6 +285,29 @@ class PostController {
       message: "Posts fetched successfully",
     });
   };
+
+  // REPORT
+  reportAPost = [
+    ValidatorMiddleware.inputs([
+      param("postId", "A valid postId is required").exists().isUUID(),
+    ]),
+    async (req: Request, res: Response) => {
+      const userId = req?.user?.id;
+      const postId = req.params?.postId;
+
+      const data = await postService.reportPost(
+        userId,
+        postId,
+        req.body?.reason ?? ""
+      );
+
+      res.status(HttpStatusCode.Ok).json({
+        success: true,
+        data,
+        message: "Post reported successfully",
+      });
+    },
+  ];
 
   // LIKES
   likeAPost = [

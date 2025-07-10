@@ -9,6 +9,8 @@ import {
   GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET,
   GOOGLE_WEB_CLIENT_REDIRECT,
+  REFRESH_TOKEN_SECRET,
+  USER_TOKEN,
 } from "@/config";
 import { URLSearchParams } from "url";
 
@@ -77,12 +79,48 @@ class AuthController {
       body("username", "Email/Username/Phone is required").exists().isString(),
       body("password").exists().isString(),
     ]),
-    async (req: Request, res: Response, next: NextFunction) => {
+    async (req: Request, res: Response) => {
       const user = await authService.loginUser(req.body);
 
       return authService.sendTokenResponse(user, HttpStatusCode.Ok, res);
     },
   ];
+
+  /**
+   * Logs in a user
+   */
+  refreshToken = async (req: Request, res: Response) => {
+    const refreshToken = req.cookies?.[USER_TOKEN];
+
+    if (!refreshToken)
+      throw new ErrorResponse(
+        "Invalid or expired token",
+        HttpStatusCode.Unauthorized
+      );
+
+    try {
+      const decode = authService.verifyAuthToken(
+        refreshToken,
+        REFRESH_TOKEN_SECRET
+      );
+
+      // @ts-ignore
+      req.id = decode.id;
+      let user: IUser | null;
+
+      user = await userService.getUserById(req.id);
+
+      if (!user) {
+        throw new ErrorResponse("Invalid or expired token", HttpStatusCode.Forbidden);
+      }
+
+      req.user = user;
+
+      return authService.refreshToken(user, HttpStatusCode.Ok, res);
+    } catch (err) {
+      throw new ErrorResponse("Invalid or expired token", HttpStatusCode.Forbidden);
+    }
+  };
 
   // @desc      Forgot password
   // @route     POST /api/v1/auth/user/forgot-password
@@ -170,7 +208,7 @@ class AuthController {
   // @desc      Google AUTH
   // @route     GET /api/v1/auth/user/google
   // @access    Public
-  googleAuth = async (req: Request, res: Response, next: NextFunction) => {
+  googleAuth = async (req: Request, res: Response) => {
     const token = req?.body?.credential;
     if (!token) {
       throw new ErrorResponse("Invalid credentials", HttpStatusCode.BadRequest);
@@ -259,7 +297,7 @@ class AuthController {
   // @desc      Google AUTH Callback
   // @route     GET /api/v1/auth/user/google-callback
   // @access    Public
-  googleCallback = async (req: Request, res: Response, next: NextFunction) => {
+  googleCallback = async (req: Request, res: Response) => {
     const code = req.query?.code as string;
 
     if (!code) {
@@ -283,13 +321,11 @@ class AuthController {
         throw new Error(getError(error));
       });
 
-
     const { id_token } = data;
 
     const verificationResponse = await authService.verifyGoogleIdToken(
       id_token
     );
-
 
     const profile = verificationResponse?.payload;
 
