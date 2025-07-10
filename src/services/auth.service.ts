@@ -6,11 +6,13 @@ import { IUser } from "@/models";
 import { ErrorResponse, omitDTO, toDTO, verifyJwtToken } from "@/utils";
 import { HttpStatusCode } from "axios";
 import {
+  ACCESS_TOKEN_SECRET,
   env,
   GOOGLE_CLIENT_ID,
   JWT_COOKIE_EXPIRY,
   JWT_EXPIRY,
   JWT_KEY,
+  REFRESH_TOKEN_SECRET,
   USER_TOKEN,
 } from "@/config";
 import { emailRepository } from "@/repository/email.repository";
@@ -139,6 +141,18 @@ class AuthService extends BaseService {
     });
   }
 
+  private generateAuthTokens(user: IUser) {
+    const accessToken = jwt.sign({ id: user.id }, ACCESS_TOKEN_SECRET, {
+      expiresIn: "30m",
+    });
+
+    const refreshToken = jwt.sign({ id: user.id }, REFRESH_TOKEN_SECRET, {
+      expiresIn: "14d",
+    });
+
+    return { accessToken, refreshToken };
+  }
+
   /**
    * Generates a signed JWT token for the user
    * @returns {Promise<string>}
@@ -153,9 +167,20 @@ class AuthService extends BaseService {
    * Verifies a jwt token
    * @param token
    */
-  verifyJwtToken(token: string): AuthPayload {
+  // verifyJwtToken(token: string): AuthPayload {
+  //   try {
+  //     return verifyJwtToken(token, JWT_KEY) as AuthPayload;
+  //   } catch (error) {
+  //     throw new ErrorResponse(
+  //       "Invalid or expired token",
+  //       HttpStatusCode.BadRequest
+  //     );
+  //   }
+  // }
+
+  verifyAuthToken(token: string, secret: string): AuthPayload {
     try {
-      return verifyJwtToken(token, JWT_KEY) as AuthPayload;
+      return verifyJwtToken(token, secret) as AuthPayload;
     } catch (error) {
       throw new ErrorResponse(
         "Invalid or expired token",
@@ -180,7 +205,9 @@ class AuthService extends BaseService {
     res: Response
   ) => {
     // Create token
-    const token = await this.getSignedJWT(user);
+    // const token = await this.getSignedJWT(user);
+
+    const { accessToken: token, refreshToken } = this.generateAuthTokens(user);
     /**
      * Cookie options for setting JWT token in the response.
      *
@@ -191,9 +218,10 @@ class AuthService extends BaseService {
      * accessible only through the HTTP protocol, not via JavaScript.
      */
     const options: CookieOptions = {
-      // expires minutes in milliseconds
-      expires: new Date(Date.now() + Number(JWT_COOKIE_EXPIRY) * 60 * 1000),
+      // maxAge is 14 minutes in milliseconds
+      maxAge: 14 * 24 * 60 * 60 * 1000, // ms
       httpOnly: true,
+      sameSite: "strict"
     };
 
     if (env === "production") {
@@ -204,14 +232,47 @@ class AuthService extends BaseService {
 
     res
       .status(statusCode)
-      .cookie(USER_TOKEN, token, {
-        domain: "localhost",
-        ...options,
-      })
-      // .cookie(USER_TOKEN, token, {
-      //   domain: "134.209.190.84",
-      //   ...options,
-      // })
+      .cookie(USER_TOKEN, refreshToken, options)
+      .json({
+        success: true,
+        user,
+        token,
+      });
+  };
+
+
+  refreshToken = async (
+    user: IUser,
+    statusCode: number,
+    res: Response
+  ) => {
+    // Create token
+    // const token = await this.getSignedJWT(user);
+
+    const { accessToken: token, refreshToken } = this.generateAuthTokens(user);
+    /**
+     * Cookie options for setting JWT token in the response.
+     *
+     * @type {CookieOptions}
+     * @property {Date} expires - The expiration date of the cookie,
+     * calculated based on the current date and the JWT cookie expiry duration.
+     * @property {boolean} httpOnly - Indicates if the cookie is
+     * accessible only through the HTTP protocol, not via JavaScript.
+     */
+    const options: CookieOptions = {
+      // maxAge is 14 minutes in milliseconds
+      maxAge: 14 * 24 * 60 * 60 * 1000, // ms
+      httpOnly: true,
+      sameSite: "strict"
+    };
+
+    if (env === "production") {
+      options.secure = true;
+    }
+
+    res
+      .status(statusCode)
+      .cookie(USER_TOKEN, refreshToken, options)
       .json({
         success: true,
         user,
@@ -369,7 +430,7 @@ class AuthService extends BaseService {
       { email: payload?.email, updates }
     );
 
-    console.log({result})
+    console.log({ result });
 
     const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
 

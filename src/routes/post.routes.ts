@@ -64,7 +64,7 @@ postRouter.get(
   postController.getPostComments
 );
 
-postRouter.get(
+postRouter.post(
   "/report/:postId",
   authMiddleWare.protectRoute,
   postController.reportAPost
