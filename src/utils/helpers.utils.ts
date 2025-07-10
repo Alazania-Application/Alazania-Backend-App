@@ -11,6 +11,7 @@ import {
   isTime,
   int,
 } from "neo4j-driver";
+import slugify from "slugify";
 /**
  * Generates jwt token
  * @param payload
@@ -185,7 +186,7 @@ export const getPaginationFilters = ({
   );
 
   // const formattedOtherQueries
-  const searchQuery = (otherQueries as any)?.search ?? ""
+  const searchQuery = (otherQueries as any)?.search ?? "";
   const search =
     !searchQuery || searchQuery.trim() === ""
       ? null
@@ -197,7 +198,7 @@ export const getPaginationFilters = ({
     sort: sanitizedSort,
     skip: int(skip),
     ...otherQueries,
-    search
+    search,
   };
 };
 
@@ -209,7 +210,13 @@ export const isIdToken = (token: string) => {
 export const extractHashtags = (text: string) => {
   return [
     ...new Set(
-      (text.match(/#\w+/g) || []).map((tag) => tag.slice(1).toLowerCase())
+      (text.match(/#\w+/g) || []).map((tag) =>
+        slugify(tag, {
+          trim: true,
+          lower: true,
+          remove: /#/g
+        })
+      )
     ),
   ];
 };

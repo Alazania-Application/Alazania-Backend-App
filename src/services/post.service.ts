@@ -14,15 +14,14 @@ import { deleteFolderByPrefix } from "@/middlewares/upload.middleware";
 import { HttpStatusCode } from "axios";
 
 class PostService extends BaseService {
-  private extractPost = (record: Record<any, any>, userId?: string) => {
-    const post = record?.get("post");
-    const creator = record?.get("creator");
-    const topic = record?.get("topic");
-    const hashtags = record?.get("hashtags")?.properties ?? [];
-    const liked = Boolean(!!record?.get("liked"));
-    const files = record
-      ?.get("files")
-      ?.map((record: any) => record?.properties);
+  private extractPost = (data: Record<any, any>, userId?: string) => {
+    const record = data && data?.toObject();
+    const post = record?.post;
+    const creator = record?.creator;
+    const topic = record?.topic;
+    const hashtags = record?.hashtags?.properties ?? [];
+    const liked = Boolean(!!record?.liked);
+    const files = record?.files?.map((record: any) => record?.properties);
 
     if (post) {
       return toNativeTypes({
@@ -176,15 +175,16 @@ class PostService extends BaseService {
         // // Create user - post relationship
         MERGE (u)-[:${RelationshipTypes.POSTED}]->(p)
 
-        WITH p
+        WITH p, u
 
         // // Optional link to topic
         OPTIONAL MATCH (t:${NodeLabels.Topic} {slug: $topicSlug})
         FOREACH (_ IN CASE WHEN t IS NOT NULL THEN [1] ELSE [] END |
           MERGE (p)-[:${RelationshipTypes.BELONGS_TO}]->(t)
+          MERGE (u)-[:${RelationshipTypes.INTERESTED_IN}]->(t)
         )
 
-        WITH p, $postId AS sessionID
+        WITH p, $postId AS sessionID, u
         // // Optional match and delete session
         OPTIONAL MATCH (session:${NodeLabels.PostSession} {sessionId: sessionID})
         FOREACH (_ IN CASE WHEN session IS NOT NULL THEN [1] ELSE [] END |
@@ -192,11 +192,11 @@ class PostService extends BaseService {
         )
 
 
-        WITH p, $files AS files
+        WITH p, $files AS files, u
 
         // // Create new file nodes
         UNWIND range(0, size(COALESCE(files, []))-1) AS idx
-        WITH p, files[idx] AS file, idx
+        WITH p, files[idx] AS file, idx, u
         CREATE (f:${NodeLabels.File})
         SET f = file
 
@@ -204,28 +204,36 @@ class PostService extends BaseService {
         MERGE (p)-[r:${RelationshipTypes.HAS_FILE}]->(f)
         SET r.order = idx
         
-        WITH p, $hashtags AS hashtags
+        WITH p, u, $hashtags AS hashtags
 
         UNWIND COALESCE(hashtags, []) AS hashtag
-        MERGE (h:${NodeLabels.Hashtag} {name: hashtag})
+        MERGE (h:${NodeLabels.Hashtag} {slug: hashtag})
         ON CREATE SET 
-              h.popularity = 0,
-              h.lastUsedAt = datetime($createdAt)
+            h.popularity = 0,
+            h.createdAt = datetime($createdAt)
+        ON MATCH SET
+            h.popularity = COALESCE(h.popularity, 0) + 1
+        SET
+            h.lastUsedAt = datetime($createdAt)
+
 
         // // Create post <-> hashtags relationship
         MERGE (p)-[:${RelationshipTypes.HAS_HASHTAG}]->(h)
-        SET 
-          h.popularity = h.popularity + 1,
-          h.lastUsedAt = datetime($createdAt)
         
-        RETURN p AS post
+        // // Create user <-> hashtags relationship
+        MERGE (u)-[r:${RelationshipTypes.FOLLOWS_HASHTAG}]->(h)
+        ON CREATE SET 
+          r.interestLevel = 5,
+          r.since = datetime()
+
+        RETURN p AS post, u AS creator
       `,
       params
     );
 
     const postNode = result.records[0];
 
-    return this.extractPost(postNode) as Post;
+    return this.extractPost(postNode, payload?.userId) as Post;
   }
 
   async deletePost(
