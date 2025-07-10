@@ -1,4 +1,5 @@
 export enum NodeLabels {
+  DummyUser = "DummyUser",
   User = "User",
   Hashtag = "Hashtag",
   Topic = "Topic",

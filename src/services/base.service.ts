@@ -59,7 +59,7 @@ export default class BaseService {
     params: IReadQueryParams & Record<string, any> = {
       sort: "DESC",
       page: 1,
-      limit: 10,
+      limit: 25,
       skip: 0,
     },
     paginated: Boolean = false
