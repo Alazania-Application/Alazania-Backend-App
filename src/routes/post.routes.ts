@@ -72,11 +72,11 @@ postRouter.post(
 
 // postRouter.post("/", authMiddleWare.protectRoute, multerConfig.array("images"), postController.createPost);
 
-postRouter.post(
-  "/:postId/like",
-  authMiddleWare.protectRoute,
-  postController.likeAPost
-);
+// postRouter.post(
+//   "/:postId/like",
+//   authMiddleWare.protectRoute,
+//   postController.likeAPost
+// );
 postRouter.post(
   "/:postId/unlike",
   authMiddleWare.protectRoute,
