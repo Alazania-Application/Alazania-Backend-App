@@ -144,7 +144,7 @@ class UserController {
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
 
-      const users = await userService.getUsers({ userId });
+      const users = await userService.getUsers({ userId , ...req.query});
 
       res.status(HttpStatusCode.Ok).json({
         success: true,
@@ -202,6 +202,7 @@ class UserController {
       });
     },
   ];
+
 
   blockUser = [
     ValidatorMiddleware.inputs([
