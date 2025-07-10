@@ -186,6 +186,23 @@ class UserController {
     },
   ];
 
+  reportUser = [
+    ValidatorMiddleware.inputs([
+      param("userId", "A valid User id is required").exists().isUUID(),
+    ]),
+    async (req: Request, res: Response) => {
+      const userId = req?.user?.id;
+
+      const data = await userService.reportUser(userId, req.params.userId, req.body?.reason ?? '');
+
+      res.status(HttpStatusCode.Ok).json({
+        success: true,
+        data,
+        message: "User reported successfully",
+      });
+    },
+  ];
+
   blockUser = [
     ValidatorMiddleware.inputs([
       param("userId", "User id is required").exists().isUUID(),

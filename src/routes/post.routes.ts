@@ -64,6 +64,12 @@ postRouter.get(
   postController.getPostComments
 );
 
+postRouter.get(
+  "/report/:postId",
+  authMiddleWare.protectRoute,
+  postController.reportAPost
+);
+
 // postRouter.post("/", authMiddleWare.protectRoute, multerConfig.array("images"), postController.createPost);
 
 postRouter.post(

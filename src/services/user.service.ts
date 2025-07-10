@@ -84,7 +84,7 @@ class UserService extends BaseService {
         OPTIONAL MATCH (otherUser)-[blockedByUser:${RelationshipTypes.BLOCKED}]->(currentUser)
         OPTIONAL MATCH (currentUser)-[blockedUser:${RelationshipTypes.BLOCKED}]->(otherUser)
         
-        WHERE otherUser IS NOT NULL AND (otherUser.isDemo IS NULL OR otherUser.isDemo <> true)
+        WHERE otherUser IS NOT NULL
         AND blockedByUser IS NULL 
         
         OPTIONAL MATCH (currentUser)-[followsUser:${RelationshipTypes.FOLLOWS}]->(otherUser)
@@ -196,7 +196,6 @@ class UserService extends BaseService {
 
         WHERE other IS NOT NULL AND blockedByUser IS NULL 
         AND other.id <> $userId
-        AND (other.isDemo IS NULL OR other.isDemo <> true)
 
         OPTIONAL MATCH (other)-[isFollowingBack:${RelationshipTypes.FOLLOWS}]->(currentUser)
         OPTIONAL MATCH (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(other)
@@ -243,7 +242,6 @@ class UserService extends BaseService {
 
         WHERE other IS NOT NULL AND blockedByUser IS NULL 
         AND other.id <> $userId
-        AND (other.isDemo IS NULL OR other.isDemo <> true)
         AND NOT EXISTS {
           MATCH (currentUser)-[:${RelationshipTypes.FOLLOWS}]->(other)
         }
@@ -256,6 +254,36 @@ class UserService extends BaseService {
     return result.records.map((v) => ({
       ...this.withPublicDTO(v.get("other")?.properties),
     })) as IUser[];
+  };
+
+  reportUser = async (
+    currentUserId: string = "",
+    userToReport: string = "",
+    reason: string = "",
+  ) => {
+    if (currentUserId == userToReport) {
+      return;
+    }
+
+    const query = `
+      MATCH (currentUser: ${NodeLabels.User} {id: $currentUserId})
+      MATCH (userToReport: ${NodeLabels.User} {id: $userToReport})
+
+      WHERE userToReport IS NOT NULL
+
+      MERGE (currentUser)-[r:${RelationshipTypes.REPORTED_USER} {timestamp: datetime($timestamp)}]->(userToReport)
+      ON CREATE SET
+        r.reason = $reason
+      
+      RETURN userToReport
+    `;
+
+    await this.writeToDB(query, {
+      currentUserId,
+      userToReport,
+      reason,
+      timestamp: new Date().toISOString(),
+    });
   };
 
   blockUser = async (
@@ -274,7 +302,6 @@ class UserService extends BaseService {
       OPTIONAL MATCH (userToBlock)-[wasFollowingBackRel:${RelationshipTypes.FOLLOWS}]->(currentUser)
 
       WHERE userToBlock IS NOT NULL
-        AND (userToBlock.isDemo IS NULL OR userToBlock.isDemo <> true)
 
       MERGE (currentUser)-[r:${RelationshipTypes.BLOCKED}]->(userToBlock)
       ON CREATE SET
@@ -327,7 +354,6 @@ class UserService extends BaseService {
       MATCH (currentUser)-[blockedRel:${RelationshipTypes.BLOCKED}]->(userToUnblock)
 
       WHERE userToUnblock IS NOT NULL
-        AND (userToUnblock.isDemo IS NULL OR userToUnblock.isDemo <> true)
 
       WITH currentUser, userToUnblock,
            blockedRel.wasFollowing AS wasFollowing,
@@ -379,7 +405,6 @@ class UserService extends BaseService {
       OPTIONAL MATCH (userToFollow)-[isFollowingBack:${RelationshipTypes.FOLLOWS}]->(currentUser)
 
       WHERE userToFollow IS NOT NULL
-        AND (userToFollow.isDemo IS NULL OR userToFollow.isDemo <> true)
 
       MERGE (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(userToFollow)
         ON CREATE SET 
@@ -417,7 +442,6 @@ class UserService extends BaseService {
       OPTIONAL MATCH (userToUnfollow)-[isFollowingBack:${RelationshipTypes.FOLLOWS}]->(currentUser)
 
       WHERE userToUnfollow IS NOT NULL
-        AND (userToUnfollow.isDemo IS NULL OR userToUnfollow.isDemo <> true)
       
       MATCH (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(userToUnfollow)
       DELETE isFollowing
@@ -458,7 +482,6 @@ class UserService extends BaseService {
       MATCH (user: ${NodeLabels.User})<-[:${RelationshipTypes.FOLLOWS}]-(userToMatch)
 
       WHERE user.id <> $userToMatchId
-        AND (user.isDemo IS NULL OR user.isDemo <> true)
 
       OPTIONAL MATCH (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(user)
       OPTIONAL MATCH (user)-[isFollowingBack:${RelationshipTypes.FOLLOWS}]->(currentUser)
@@ -502,7 +525,6 @@ class UserService extends BaseService {
 
       MATCH (user: ${NodeLabels.User})-[:${RelationshipTypes.FOLLOWS}]->(userToMatch)
       WHERE user.id <> $userToMatchId
-        AND (user.isDemo IS NULL OR user.isDemo <> true)
 
       OPTIONAL MATCH (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(user)
       OPTIONAL MATCH (user)-[isFollowingBack:${RelationshipTypes.FOLLOWS}]->(currentUser)
@@ -539,7 +561,6 @@ class UserService extends BaseService {
 
       MATCH (user: ${NodeLabels.User})<-[:${RelationshipTypes.FOLLOWS}]-(userToMatch)
       WHERE user.id <> userToMatch.id
-        AND (user.isDemo IS NULL OR user.isDemo <> true)
 
       OPTIONAL MATCH (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(user)
       OPTIONAL MATCH (user)-[isFollowingBack:${RelationshipTypes.FOLLOWS}]->(currentUser)
@@ -575,7 +596,6 @@ class UserService extends BaseService {
 
       MATCH (user: ${NodeLabels.User})-[:${RelationshipTypes.FOLLOWS}]->(userToMatch)
       WHERE user.id <> userToMatch.id
-        AND (user.isDemo IS NULL OR user.isDemo <> true)
 
       OPTIONAL MATCH (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(user)
       OPTIONAL MATCH (user)-[isFollowingBack:${RelationshipTypes.FOLLOWS}]->(currentUser)
