@@ -19,28 +19,25 @@ class PostService extends BaseService {
     const post = record?.post;
     const creator = record?.creator;
     const topic = record?.topic;
-    const hashtags = record?.hashtags?.properties ?? [];
+    const hashtags = record?.hashtags ?? [];
     const liked = Boolean(!!record?.liked);
-    const files = record?.files?.map((record: any) => record?.properties);
+    const files = record?.files?.map((record: any) => toNativeTypes(record?.properties ?? {}));
 
     if (post) {
       return toNativeTypes({
-        id: post?.properties?.id,
-        caption: post?.properties?.caption,
+        id: post?.id,
+        caption: post?.caption,
         isMyPost:
-          post?.properties?.isMyPost || creator?.properties?.id == userId,
-        createdAt: post?.properties?.createdAt,
+          post?.isMyPost || creator?.id == userId,
+        createdAt: post?.createdAt,
         files,
         engagement: {
-          likes: post?.properties?.likes?.toInt(),
-          comments: post?.properties?.comments?.toInt(),
-          shares: post?.properties?.shares?.toInt(),
+          likes: post?.likes?.toInt(),
+          comments: post?.comments?.toInt(),
+          shares: post?.shares?.toInt(),
         },
-        creator: {
-          userId: creator?.properties?.id,
-          username: creator?.properties?.username ?? creator?.properties?.email,
-        },
-        topic: topic ? topic?.properties?.name : null,
+        creator,
+        topic: topic ? topic?.name : null,
         hashtags,
         liked,
       });
@@ -331,7 +328,7 @@ class PostService extends BaseService {
         WITH p, creator, topic, COLLECT(hashtag.name) as hashtags, COLLECT(f) AS files, r,
         
 
-        RETURN topic, hashtags, files, creator,
+        RETURN topic, hashtags, files, {userId: creator.id, username: COALESCE(creator.username, creator.email)} AS creator,
           p {.*, isMyPost: (creator.id = $userId)} as post
       `,
       {
@@ -360,7 +357,7 @@ class PostService extends BaseService {
 
         WITH p, creator, topic, COLLECT(hashtag.name) as hashtags, COLLECT(f) AS files,  r
 
-        RETURN  topic, hashtags, files, creator,
+        RETURN  topic, hashtags, files, {userId: creator.id, username: COALESCE(creator.username, creator.email)} AS creator,
           p {.*, isMyPost: (creator.id = $userId)} as post
       `,
       {
@@ -648,7 +645,7 @@ class PostService extends BaseService {
             RETURN post AS innerPost, creator, topic, liked, hashtags, files
           }
 
-          RETURN innerPost AS topic, liked, hashtags, files, relevanceScore, totalCount, creator,
+          RETURN innerPost AS topic, liked, hashtags, files, relevanceScore, totalCount, {userId: creator.id, username: COALESCE(creator.username, creator.email)} AS creator,
           post {.*, isMyPost: (creator.id = $userId)} as post
           ORDER BY relevanceScore DESC, post.createdAt DESC
         `;
@@ -767,7 +764,7 @@ class PostService extends BaseService {
         ORDER BY r.order
         WITH post, creator, topic, liked, hashtags, COLLECT(f) AS files, r, totalCount
 
-        RETURN topic, liked, hashtags, files, totalCount, creator,
+        RETURN topic, liked, hashtags, files, totalCount, {userId: creator.id, username: COALESCE(creator.username, creator.email)} AS creator,
         post {.*, isMyPost: (creator.id = $userId)} as post
         
         ORDER BY post.createdAt DESC //relevanceScore DESC
@@ -818,7 +815,9 @@ class PostService extends BaseService {
       WITH post, creator, topic, liked, COLLECT(DISTINCT hashtag.name) AS hashtags, COLLECT(files) AS orderedFiles, r, totalCount
       
       
-      RETURN post, creator, topic, liked, hashtags, orderedFiles AS files, totalCount
+      RETURN topic, liked, hashtags, orderedFiles AS files, totalCount, {userId: creator.id, username: COALESCE(creator.username, creator.email)} AS creator,
+      post {.*, isMyPost: true } as post
+
       ORDER BY post.createdAt DESC
     `;
     queryParams = { userId, ...params };
@@ -884,7 +883,7 @@ class PostService extends BaseService {
       WITH post, creator, topic, liked, COLLECT(DISTINCT hashtag.name) AS hashtags, COLLECT(files) AS orderedFiles, r, totalCount
       
       
-      RETURN  topic, liked, hashtags, orderedFiles AS files, totalCount, creator,
+      RETURN  topic, liked, hashtags, orderedFiles AS files, totalCount, {userId: creator.id, username: COALESCE(creator.username, creator.email)} AS creator,
       post {.*, isMyPost: (creator.id = $loggedInUserId)} as post
       ORDER BY post.createdAt DESC
     `;
