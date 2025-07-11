@@ -77,6 +77,7 @@ postRouter.post(
   authMiddleWare.protectRoute,
   postController.likeAPost
 );
+
 postRouter.post(
   "/:postId/unlike",
   authMiddleWare.protectRoute,
