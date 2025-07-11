@@ -325,20 +325,18 @@ class PostService extends BaseService {
         MATCH (u:${NodeLabels.User} {id: $userId})
         MATCH (p:${NodeLabels.Post} {id: $postId, isDeleted: false})
 
-        MERGE (u)-[liked:${RelationshipTypes.LIKED}]->(p)
-        ON CREATE SET liked.timestamp = datetime($timestamp), p.likes = coalesce(p.likes, 0) + 1
+        MERGE (u)-[r:${RelationshipTypes.LIKED}]->(p)
+        ON CREATE SET r.timestamp = datetime($timestamp), p.likes = coalesce(p.likes, 0) + 1
 
         with p
 
         MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(p)
         OPTIONAL MATCH (p)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
         OPTIONAL MATCH (p)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
-        
-        OPTIONAL MATCH (post)-[hasFile:${RelationshipTypes.HAS_FILE}]->(f:${NodeLabels.File})
-        WHERE hasFile IS NOT NULL
-        ORDER BY hasFile.order
+        OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(f:${NodeLabels.File})
+        ORDER BY r.order
 
-        WITH p, creator, topic, COLLECT(hashtag.name) as hashtags, COLLECT(f) AS files
+        WITH p, creator, topic, COLLECT(hashtag.name) as hashtags, COLLECT(f) AS files, r
         
 
         RETURN topic, hashtags, files, {userId: creator.id, username: COALESCE(creator.username, creator.email)} AS creator,
@@ -357,20 +355,18 @@ class PostService extends BaseService {
   async unlikePost(userId: string, postId: string) {
     const result = await this.writeToDB(
       `
-        MATCH (u:${NodeLabels.User} {id: $userId})-[liked:${RelationshipTypes.LIKED}]->(p:${NodeLabels.Post} {id: $postId, isDeleted: false})
-        DELETE liked
+        MATCH (u:${NodeLabels.User} {id: $userId})-[r:${RelationshipTypes.LIKED}]->(p:${NodeLabels.Post} {id: $postId, isDeleted: false})
+        DELETE r
         SET p.likes = CASE WHEN p.likes > 0 THEN p.likes - 1 ELSE 0 END
         with p
 
         MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(p)
         OPTIONAL MATCH (p)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
         OPTIONAL MATCH (p)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
-        
-        OPTIONAL MATCH (post)-[hasFile:${RelationshipTypes.HAS_FILE}]->(f:${NodeLabels.File})
-        WHERE hasFile IS NOT NULL
-        ORDER BY hasFile.order
+        OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(f:${NodeLabels.File})
+        ORDER BY r.order
 
-        WITH p, creator, topic, COLLECT(hashtag.name) as hashtags, COLLECT(f) AS files
+        WITH p, creator, topic, COLLECT(hashtag.name) as hashtags, COLLECT(f) AS files, r
 
         RETURN topic, hashtags, files, {userId: creator.id, username: COALESCE(creator.username, creator.email)} AS creator,
           p {.*, isMyPost: (creator.id = $userId)} as post
@@ -592,9 +588,8 @@ class PostService extends BaseService {
             OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
             OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
             OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
-            OPTIONAL MATCH (post)-[hasFile:${RelationshipTypes.HAS_FILE}]->(f:${NodeLabels.File})
-            WHERE hasFile IS NOT NULL
-            ORDER BY hasFile.order
+            OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(f:${NodeLabels.File})
+            ORDER BY r.order
             
             WITH post, creator, topic, liked,
                 COLLECT(DISTINCT hashtag.name) AS hashtags,
@@ -643,11 +638,9 @@ class PostService extends BaseService {
         
         WITH post, creator, topic, liked, COLLECT(hashtag.name) as hashtags, totalCount
 
-        OPTIONAL MATCH (post)-[hasFile:${RelationshipTypes.HAS_FILE}]->(f:${NodeLabels.File})
-        WHERE hasFile IS NOT NULL
-        ORDER BY hasFile.order
-
-        WITH post, creator, topic, liked, hashtags, COLLECT(f) AS files, totalCount
+        OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(f:${NodeLabels.File})
+        ORDER BY r.order
+        WITH post, creator, topic, liked, hashtags, COLLECT(f) AS files, r, totalCount
 
         RETURN topic, liked, hashtags, files, totalCount, {userId: creator.id, username: COALESCE(creator.username, creator.email)} AS creator,
         post {.*, isMyPost: (creator.id = $userId)} as post
@@ -695,12 +688,9 @@ class PostService extends BaseService {
       OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
       OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
       OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
-      
-      OPTIONAL MATCH (post)-[hasFile:${RelationshipTypes.HAS_FILE}]->(files:${NodeLabels.File})
-      WHERE hasFile IS NOT NULL
-      ORDER BY hasFile.order
-      
-      WITH post, creator, topic, liked, COLLECT(DISTINCT hashtag.name) AS hashtags, COLLECT(files) AS orderedFiles, totalCount
+      OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(files:${NodeLabels.File})
+      ORDER BY r.order
+      WITH post, creator, topic, liked, COLLECT(DISTINCT hashtag.name) AS hashtags, COLLECT(files) AS orderedFiles, r, totalCount
       
       
       RETURN topic, liked, hashtags, orderedFiles AS files, totalCount, {userId: creator.id, username: COALESCE(creator.username, creator.email)} AS creator,
@@ -766,12 +756,9 @@ class PostService extends BaseService {
       OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
       OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
       OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
-
-      OPTIONAL MATCH (post)-[hasFile:${RelationshipTypes.HAS_FILE}]->(files:${NodeLabels.File})
-      WHERE hasFile IS NOT NULL
-      ORDER BY hasFile.order
-
-      WITH post, creator, topic, liked, COLLECT(DISTINCT hashtag.name) AS hashtags, COLLECT(files) AS orderedFiles, totalCount
+      OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(files:${NodeLabels.File})
+      ORDER BY r.order
+      WITH post, creator, topic, liked, COLLECT(DISTINCT hashtag.name) AS hashtags, COLLECT(files) AS orderedFiles, r, totalCount
       
       
       RETURN  topic, liked, hashtags, orderedFiles AS files, totalCount, {userId: creator.id, username: COALESCE(creator.username, creator.email)} AS creator,
