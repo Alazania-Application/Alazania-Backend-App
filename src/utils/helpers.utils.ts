@@ -1,4 +1,3 @@
-import { Request } from "express";
 import jsonWebToken from "jsonwebtoken/index";
 import {
   Integer,
@@ -10,6 +9,7 @@ import {
   isLocalTime,
   isTime,
   int,
+  isNode,
 } from "neo4j-driver";
 import slugify from "slugify";
 /**
@@ -141,6 +141,8 @@ export function valueToNativeType(value: any) {
     isDuration(value)
   ) {
     value = value.toString();
+  } else if (isNode(value)) {
+    value = valueToNativeType(value?.properties || value?.toString());
   } else if (
     typeof value === "object" &&
     value !== undefined &&
@@ -214,7 +216,7 @@ export const extractHashtags = (text: string) => {
         slugify(tag, {
           trim: true,
           lower: true,
-          remove: /#/g
+          remove: /#/g,
         })
       )
     ),
@@ -224,7 +226,9 @@ export const extractHashtags = (text: string) => {
 export const extractMentions = (text: string) => {
   return [
     ...new Set(
-      (text.match(/@\w+/g) || []).map((tag) => String(tag)?.toLowerCase()?.trim())
+      (text.match(/@\w+/g) || []).map((tag) =>
+        String(tag)?.toLowerCase()?.trim()
+      )
     ),
   ];
 };

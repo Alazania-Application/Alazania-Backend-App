@@ -17,12 +17,15 @@ import { HttpStatusCode } from "axios";
 class PostService extends BaseService {
   private extractPost = (data: Record<any, any>, userId?: string) => {
     const record = data && data?.toObject();
-    const post = record?.post;
-    const creator = record?.creator;
-    const topic = record?.topic;
-    const hashtags = record?.hashtags ?? [];
-    const liked = Boolean(!!record?.liked);
-    const files = record?.files?.map((record: any) => toNativeTypes(record?.properties ?? {}));
+    const post = toNativeTypes(record?.post);
+    const creator = post?.creator;
+    const topic = post?.topic;
+    const hashtags = post?.hashtags ?? [];
+    const mentions = post?.mentions ?? [];
+    const liked = Boolean(!!post?.liked);
+    const files = post?.files
+
+    console.log({post})
 
     if (post) {
       return toNativeTypes({
@@ -33,13 +36,14 @@ class PostService extends BaseService {
         createdAt: post?.createdAt,
         files,
         engagement: {
-          likes: post?.likes?.toInt(),
-          comments: post?.comments?.toInt(),
-          shares: post?.shares?.toInt(),
+          likes: post?.likes,
+          comments: post?.comments,
+          shares: post?.shares,
         },
         creator,
         topic: topic ? topic?.name : null,
         hashtags,
+        mentions,
         liked,
       });
     }
@@ -153,7 +157,7 @@ class PostService extends BaseService {
       createdAt: now.toISOString(),
       topicSlug: payload?.topicSlug || null,
       hashtags,
-      mentions
+      mentions,
     };
 
     // Create the post
@@ -164,7 +168,7 @@ class PostService extends BaseService {
         CREATE (p:${NodeLabels.Post} {
           id: $postId,
           caption: $caption,
-          userId: $userId,
+          userId: u.id,
           createdAt: datetime($createdAt),
           likes: 0,
           comments: 0,
@@ -196,13 +200,30 @@ class PostService extends BaseService {
 
         // // Create new file nodes
         UNWIND range(0, size(COALESCE(files, []))-1) AS idx
-        WITH p, files[idx] AS file, idx, u
+        WITH p, u, idx, files[idx] AS file, COALESCE(files[idx].tags, []) AS tags,
         CREATE (f:${NodeLabels.File})
-        SET f = file
+        SET f.url = file.url, f.key = file.key, f.fileType = file.fileType
 
         // // Create post <-> file relationship
         MERGE (p)-[r:${RelationshipTypes.HAS_FILE}]->(f)
         SET r.order = idx
+
+        WITH p, u, f, tags
+
+        // // create file <-> user tags
+        UNWIND tags AS tag
+        OPTIONAL MATCH(taggedUser:${NodeLabels.User} {id: tag.userId})
+        FOREACH (_ IN CASE WHEN tagRelationship IS NOT NULL THEN [1] ELSE [] END |
+            MERGE (f)-[tagRelationship:${RelationshipTypes.TAGGED}]->(taggedUser)
+            ON CREATE SET
+             tagRelationship.positionX = COALESCE(tag.positionX,null)
+             tagRelationship.positionY = COALESCE(tag.positionY,null)
+    
+            // // create post <-> user mention
+            MERGE (p)-[mentionRel:${RelationshipTypes.MENTIONED}]->(taggedUser)
+             ON CREATE SET mentionRel.timestamp = datetime($createdAt)
+        )
+
         
         WITH p, u, $hashtags AS hashtags
 
@@ -211,9 +232,7 @@ class PostService extends BaseService {
         ON CREATE SET 
             h.popularity = 0,
             h.createdAt = datetime($createdAt)
-        ON MATCH SET
-            h.popularity = COALESCE(h.popularity, 0) + 1
-        SET
+        SET h.popularity = COALESCE(h.popularity, 0) + 1,
             h.lastUsedAt = datetime($createdAt)
 
 
@@ -231,8 +250,10 @@ class PostService extends BaseService {
 
         UNWIND COALESCE(mentions, []) AS mention
         OPTIONAL MATCH(userMentioned:${NodeLabels.User} {username: mention})
-        WHERE userMentioned IS NOT NULL
-        MERGE (p)-[:${RelationshipTypes.MENTIONED} {timestamp: datetime($createdAt)}]->(userMentioned)
+        FOREACH (_ IN CASE WHEN userMentioned IS NOT NULL THEN [1] ELSE [] END |
+            MERGE (p)-[r:${RelationshipTypes.MENTIONED}]->(userMentioned)
+            ON CREATE SET r.timestamp = datetime($createdAt)
+        )
 
         RETURN p AS post, u AS creator
       `,
@@ -526,7 +547,6 @@ class PostService extends BaseService {
     let queryParams: Record<string, any>;
 
     if (type === "spotlight") {
-     
       cypherQuery = `
           MATCH (u:${NodeLabels.User} {id: $userId})
           OPTIONAL MATCH (u)-[interest:${RelationshipTypes.INTERESTED_IN}]->(topic:${NodeLabels.Topic})
@@ -684,17 +704,27 @@ class PostService extends BaseService {
       UNWIND allPosts AS post
       SKIP $skip
       LIMIT $limit
-      
-      OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
+
       OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
-      OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
-      OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(files:${NodeLabels.File})
+      WITH post, creator, totalCount,
+      COLLECT(DISTINCT hashtag.slug) AS hashtags
+      
+      OPTIONAL MATCH (creator)-[liked:${RelationshipTypes.LIKED}]->(post)
+      OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
+      OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(file:${NodeLabels.File})
       ORDER BY r.order
-      WITH post, creator, topic, liked, COLLECT(DISTINCT hashtag.name) AS hashtags, COLLECT(files) AS orderedFiles, r, totalCount
+      WITH post, creator, totalCount, topic, liked, COLLECT(DISTINCT file) AS files, hashtags
       
       
-      RETURN topic, liked, hashtags, orderedFiles AS files, totalCount, {userId: creator.id, username: COALESCE(creator.username, creator.email)} AS creator,
-      post {.*, isMyPost: true } as post
+      RETURN  totalCount,
+      post {.*, 
+          isMyPost: true, 
+          topic, 
+          liked, 
+          hashtags, 
+          files,
+          creator: {userId: creator.id, username: COALESCE(creator.username, creator.email)} 
+        } as post
 
       ORDER BY post.createdAt DESC
     `;
@@ -804,10 +834,8 @@ class PostService extends BaseService {
   reportPost = async (
     currentUserId: string = "",
     postToReportId: string = "",
-    reason: string = "",
+    reason: string = ""
   ) => {
-
-
     const query = `
       MATCH (currentUser: ${NodeLabels.User} {id: $currentUserId})
       MATCH (postToReport: ${NodeLabels.Post} {id: $postToReportId})

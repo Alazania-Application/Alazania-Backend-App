@@ -5,6 +5,17 @@ export interface IPostFile {
   fileType: string;
   key: string;
 }
+export interface ITags {
+  userId: string;
+  positionX?: string;
+  positionY?: string;
+}
+export interface IPostFileData extends IPostFile {
+  url: string;
+  fileType: string;
+  key: string;
+  tags?: ITags[]
+}
 export interface Post extends BaseModel {
   id: string;
   content: string;
@@ -21,6 +32,6 @@ export interface CreatePostInput {
   postId: string;
   userId: string;
   caption: string;
-  files?: IPostFile[];
+  files?: IPostFileData[];
   topicSlug?: string;
 }

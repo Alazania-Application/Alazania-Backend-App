@@ -63,8 +63,8 @@ class InterestController {
 
   addUserInterests = [
     ValidatorMiddleware.inputs([
-      body("topics", "Please provide topics").exists().isArray(),
-      body("topics.*", "Each topic must be a string").exists().isString(),
+      body("topics", "Please provide topics").notEmpty().isArray(),
+      body("topics.*", "Each topic must be a string").notEmpty().isString(),
     ]),
 
     async (req: Request, res: Response) => {
@@ -94,8 +94,8 @@ class InterestController {
 
   removeUserInterests = [
     ValidatorMiddleware.inputs([
-      body("topics", "Please provide topics").exists().isArray(),
-      body("topics.*", "Each topic must be a string").exists().isString(),
+      body("topics", "Please provide topics").notEmpty().isArray(),
+      body("topics.*", "Each topic must be a string").notEmpty().isString(),
     ]),
 
     async (req: Request, res: Response) => {
@@ -125,8 +125,8 @@ class InterestController {
 
   followHashtags = [
     ValidatorMiddleware.inputs([
-      body("hashtags", "Please provide hashtags").exists().isArray(),
-      body("hashtags.*", "Each hashtag must be a string").exists().isString(),
+      body("hashtags", "Please provide hashtags").notEmpty().isArray(),
+      body("hashtags.*", "Each hashtag must be a string").notEmpty().isString(),
     ]),
 
     async (req: Request, res: Response) => {
@@ -152,8 +152,8 @@ class InterestController {
 
   unfollowHashtags = [
     ValidatorMiddleware.inputs([
-      body("hashtags", "Please provide hashtags").exists().isArray(),
-      body("hashtags.*", "Each hashtag must be a string").exists().isString(),
+      body("hashtags", "Please provide hashtags").notEmpty().isArray(),
+      body("hashtags.*", "Each hashtag must be a string").notEmpty().isString(),
     ]),
 
     async (req: Request, res: Response) => {
@@ -180,7 +180,7 @@ class InterestController {
   getTopicHashtags = [
     ValidatorMiddleware.inputs([
       query("topics")
-        .exists()
+        .notEmpty()
         .withMessage("Please provide topics")
         .isString()
         .withMessage("Topics must be a comma-separated string")

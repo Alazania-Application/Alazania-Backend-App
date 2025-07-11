@@ -93,9 +93,9 @@ class UserController {
         .isLength({ min: 3, max: 20 })
         .matches(/^[A-Za-z][A-Za-z0-9_\-\.]*$/),
       body("topics", "Please provide topics").optional().isArray(),
-      body("topics.*", "Each topic must be a string").exists().isString(),
+      body("topics.*", "Each topic must be a string").notEmpty().isString(),
       body("hashtags", "Please provide hashtags").optional().isArray(),
-      body("hashtags.*", "Each hashtag must be a string").exists().isString(),
+      body("hashtags.*", "Each hashtag must be a string").notEmpty().isString(),
     ]),
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
@@ -156,7 +156,7 @@ class UserController {
 
   getUserProfile = [
     ValidatorMiddleware.inputs([
-      param("id", "A valid user id is required").exists().isUUID(),
+      param("id", "A valid user id is required").notEmpty().isUUID(),
     ]),
     async (req: Request, res: Response) => {
       const currentUser = req?.user?.id;
@@ -188,7 +188,7 @@ class UserController {
 
   reportUser = [
     ValidatorMiddleware.inputs([
-      param("userId", "A valid User id is required").exists().isUUID(),
+      param("userId", "A valid User id is required").notEmpty().isUUID(),
     ]),
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
@@ -206,7 +206,7 @@ class UserController {
 
   blockUser = [
     ValidatorMiddleware.inputs([
-      param("userId", "User id is required").exists().isUUID(),
+      param("userId", "User id is required").notEmpty().isUUID(),
     ]),
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
@@ -223,7 +223,7 @@ class UserController {
 
   unblockUser = [
     ValidatorMiddleware.inputs([
-      param("userId", "User id is required").exists().isUUID(),
+      param("userId", "User id is required").notEmpty().isUUID(),
     ]),
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
@@ -240,7 +240,7 @@ class UserController {
 
   followUser = [
     ValidatorMiddleware.inputs([
-      param("userId", "User id is required").exists().isUUID(),
+      param("userId", "User id is required").notEmpty().isUUID(),
     ]),
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
@@ -257,7 +257,7 @@ class UserController {
 
   unfollowUser = [
     ValidatorMiddleware.inputs([
-      param("userId", "User id is required").exists().isUUID(),
+      param("userId", "User id is required").notEmpty().isUUID(),
     ]),
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
@@ -274,7 +274,7 @@ class UserController {
 
   getUserFollowers = [
     ValidatorMiddleware.inputs([
-      param("userId", "User id is required").exists().isUUID(),
+      param("userId", "User id is required").notEmpty().isUUID(),
     ]),
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
@@ -294,7 +294,7 @@ class UserController {
 
   getUserFollowing = [
     ValidatorMiddleware.inputs([
-      param("userId", "User id is required").exists().isUUID(),
+      param("userId", "User id is required").notEmpty().isUUID(),
     ]),
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;

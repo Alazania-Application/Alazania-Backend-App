@@ -9,7 +9,6 @@ import { postService } from "@/services";
 import { ErrorResponse } from "@/utils";
 import {
   CopyObjectCommand,
-  DeleteObjectCommand,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -65,20 +64,36 @@ class PostController {
     ValidatorMiddleware.inputs([
       body("files", "files must be an array").optional().isArray(),
       body("files.*.url", "url is required and must be a string")
-        .if(body("files").exists())
-        .exists()
+        .if(body("files").notEmpty())
+        .notEmpty()
         .isString(),
       body("files.*.key", "key is required and must be a string")
-        .if(body("files").exists())
-        .exists()
+        .if(body("files").notEmpty())
+        .notEmpty()
         .isString(),
       body("files.*.fileType", "fileType is required and must be a string")
-        .if(body("files").exists())
-        .exists()
+        .if(body("files").notEmpty())
+        .notEmpty()
         .isString(),
-      body("sessionId", "sessionId is required").exists(),
+      body("files.*.tags", "tags is must be an array")
+        .if(body("files").notEmpty())
+        .optional()
+        .isArray(),
+      body("files.*.tags.*.userId", "User id is required for tags")
+        .if(body("files.*.tags").notEmpty())
+        .notEmpty()
+        .isUUID().withMessage("Invalid User id"),
+      body("files.*.tags.*.positionX", "positionX should be a number")
+        .if(body("files.*.tags").notEmpty())
+        .optional()
+        .isNumeric(),
+      body("files.*.tags.*.positionY", "positionY should be a number")
+        .if(body("files.*.tags").notEmpty())
+        .optional()
+        .isNumeric(),
+      body("sessionId", "sessionId is required").notEmpty(),
       body("caption", "caption is required")
-        .exists()
+        .notEmpty()
         .isString()
         .isLength({ max: 2200, min: 1 })
         .withMessage(
@@ -151,8 +166,8 @@ class PostController {
   getPreSignedUrl = [
     ValidatorMiddleware.inputs([
       body("fileName", "fileName string is required").isString(),
-      body("sessionId", "sessionId is required").exists().isString(),
-      body("fileType", "fileType is required").exists().isString(),
+      body("sessionId", "sessionId is required").notEmpty().isString(),
+      body("fileType", "fileType is required").notEmpty().isString(),
     ]),
 
     async (req: Request, res: Response) => {
@@ -229,7 +244,7 @@ class PostController {
   getUserPosts = [
     ValidatorMiddleware.inputs([
       param("id", "user ID is required")
-        .exists()
+        .notEmpty()
         .isUUID()
         .withMessage("Invalid user ID"),
     ]),
@@ -289,7 +304,7 @@ class PostController {
   // REPORT
   reportAPost = [
     ValidatorMiddleware.inputs([
-      param("postId", "A valid postId is required").exists().isUUID(),
+      param("postId", "A valid postId is required").notEmpty().isUUID(),
     ]),
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
@@ -312,7 +327,7 @@ class PostController {
   // LIKES
   likeAPost = [
     ValidatorMiddleware.inputs([
-      param("postId", "postId is required").exists().isUUID(),
+      param("postId", "postId is required").notEmpty().isUUID(),
     ]),
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
@@ -330,7 +345,7 @@ class PostController {
 
   unlikeAPost = [
     ValidatorMiddleware.inputs([
-      param("postId", "postId is required").exists().isUUID(),
+      param("postId", "postId is required").notEmpty().isUUID(),
     ]),
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
@@ -348,7 +363,7 @@ class PostController {
 
   getPostLikes = [
     ValidatorMiddleware.inputs([
-      param("postId", "postId is required").exists().isUUID(),
+      param("postId", "postId is required").notEmpty().isUUID(),
     ]),
     async (req: Request, res: Response) => {
       const postId = req.params?.postId;
@@ -378,7 +393,7 @@ class PostController {
   // COMMENTS
   getPostComments = [
     ValidatorMiddleware.inputs([
-      param("postId", "postId is required").exists().isUUID(),
+      param("postId", "postId is required").notEmpty().isUUID(),
     ]),
     async (req: Request, res: Response) => {
       const postId = req.params?.postId;
@@ -395,8 +410,8 @@ class PostController {
 
   commentOnPost = [
     ValidatorMiddleware.inputs([
-      param("postId", "postId is required").exists().isUUID(),
-      body("comment", "Cannot post an empty comment").exists().isString(),
+      param("postId", "postId is required").notEmpty().isUUID(),
+      body("comment", "Cannot post an empty comment").notEmpty().isString(),
     ]),
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
@@ -415,9 +430,9 @@ class PostController {
 
   replyToComment = [
     ValidatorMiddleware.inputs([
-      param("postId", "postId is required").exists().isUUID(),
-      body("comment", "Cannot post an empty comment").exists().isString(),
-      body("parentCommentId", "parentCommentId is required").exists().isUUID(),
+      param("postId", "postId is required").notEmpty().isUUID(),
+      body("comment", "Cannot post an empty comment").notEmpty().isString(),
+      body("parentCommentId", "parentCommentId is required").notEmpty().isUUID(),
     ]),
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
@@ -441,7 +456,7 @@ class PostController {
 
   likeAComment = [
     ValidatorMiddleware.inputs([
-      param("commentId", "commentId is required").exists().isUUID(),
+      param("commentId", "commentId is required").notEmpty().isUUID(),
     ]),
 
     async (req: Request, res: Response) => {
@@ -460,7 +475,7 @@ class PostController {
 
   unlikeAComment = [
     ValidatorMiddleware.inputs([
-      param("commentId", "commentId is required").exists().isUUID(),
+      param("commentId", "commentId is required").notEmpty().isUUID(),
     ]),
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;

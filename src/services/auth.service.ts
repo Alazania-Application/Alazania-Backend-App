@@ -380,7 +380,6 @@ class AuthService extends BaseService {
     })[0];
 
     await this.sendEmailVerification(user);
-    console.log({ user });
     return user;
   };
 
