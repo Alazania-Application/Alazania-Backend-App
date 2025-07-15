@@ -209,6 +209,21 @@ export const isIdToken = (token: string) => {
   return token.split(".").length === 3;
 };
 
+export function getEmailLocalPart(email: string= "") {
+  const regex = /^([^@]+)@/;
+  const match = email.match(regex);
+
+  if (match && match[1]) {
+    // match[0] would be the full match (e.g., "john.doe@")
+    // match[1] is the content of the first capturing group (e.g., "john.doe")
+    return match[1];
+  } else {
+    // Handle cases where the email format might be invalid or not match
+    return email; // Or throw an error, or return an empty string
+  }
+}
+
+
 export const extractHashtags = (text: string) => {
   return [
     ...new Set(

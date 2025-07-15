@@ -354,6 +354,8 @@ class AuthService extends BaseService {
    * @returns {unknown}
    */
   createUser = async (params: { email: string; password: string }) => {
+    const username = params.email.replace(/@/g,"_")
+
     const record = await this.writeToDB(
       `
           MERGE (u:${NodeLabels.User} {email: $email})
@@ -361,14 +363,14 @@ class AuthService extends BaseService {
             u.password = $password,
             u.id = randomuuid(),
             u.isEmailVerified = false,
-            u.username = $email,
+            u.username = $username,
             u.createdAt = datetime($timestamp),
             u.following = 0,
             u.followers = 0
           RETURN u
         `,
 
-      { ...params, timestamp: new Date().toISOString() }
+      { ...params, username, timestamp: new Date().toISOString() }
     );
 
     const user = record.records.map((record) => {
@@ -408,12 +410,14 @@ class AuthService extends BaseService {
       "isEmailVerified",
     ]);
 
+    const username = String(payload?.email||"").replace(/@/g,"_")
+
     const result = await this.writeToDB(
       `
         MERGE (u:${NodeLabels.User} {email: $email})
         ON CREATE SET 
           u.id = randomuuid(),
-          u.username = $email,
+          u.username = $username,
           u.createdAt = datetime($timestamp),
           u += $updates,
           u.following = 0,
@@ -425,12 +429,12 @@ class AuthService extends BaseService {
 
         RETURN u
       `,
-      { email: payload?.email, updates }
+      { email: payload?.email, username, updates }
     );
 
-    console.log({ result });
+  
 
-    const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
+    const doc = result.records[0]?.get("u").properties as IUser;
 
     return userService.withDTO(doc) as IUser;
   };

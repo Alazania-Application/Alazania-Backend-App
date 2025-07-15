@@ -58,7 +58,9 @@ class AuthController {
    */
   resendEmailVerificationMail = [
     ValidatorMiddleware.inputs([
-      body("username", "Email/Username/Phone is required").notEmpty().isString(),
+      body("username", "Email/Username/Phone is required")
+        .notEmpty()
+        .isString(),
     ]),
     async (req: Request, res: Response, next: NextFunction) => {
       const user = await userService.getUserByQuery(req.body.username);
@@ -76,7 +78,9 @@ class AuthController {
    */
   loginUser = [
     ValidatorMiddleware.inputs([
-      body("username", "Email/Username/Phone is required").notEmpty().isString(),
+      body("username", "Email/Username/Phone is required")
+        .notEmpty()
+        .isString(),
       body("password", "Password is required").notEmpty().isString(),
     ]),
     async (req: Request, res: Response) => {
@@ -111,14 +115,20 @@ class AuthController {
       user = await userService.getUserById(req.id);
 
       if (!user) {
-        throw new ErrorResponse("Invalid or expired token", HttpStatusCode.Forbidden);
+        throw new ErrorResponse(
+          "Invalid or expired token",
+          HttpStatusCode.Forbidden
+        );
       }
 
       req.user = user;
 
       return authService.refreshToken(user, HttpStatusCode.Ok, res);
     } catch (err) {
-      throw new ErrorResponse("Invalid or expired token", HttpStatusCode.Forbidden);
+      throw new ErrorResponse(
+        "Invalid or expired token",
+        HttpStatusCode.Forbidden
+      );
     }
   };
 
@@ -127,7 +137,9 @@ class AuthController {
   // @access    Public
   forgotUserPassword = [
     ValidatorMiddleware.inputs([
-      body("username", "Email/Username/Phone is required").notEmpty().isString(),
+      body("username", "Email/Username/Phone is required")
+        .notEmpty()
+        .isString(),
     ]),
 
     async (req: Request, res: Response, next: NextFunction) => {
@@ -146,7 +158,9 @@ class AuthController {
   // @access    Public
   resetUserPassword = [
     ValidatorMiddleware.inputs([
-      body("username", "Email/Username/Phone is required").notEmpty().isString(),
+      body("username", "Email/Username/Phone is required")
+        .notEmpty()
+        .isString(),
       body("password", "Password is required")
         .notEmpty()
         .isLength({ min: 8, max: 50 })
@@ -176,7 +190,9 @@ class AuthController {
   // @access    Public
   verifyUserEmail = [
     ValidatorMiddleware.inputs([
-      body("username", "Email/Username/Phone is required").notEmpty().isString(),
+      body("username", "Email/Username/Phone is required")
+        .notEmpty()
+        .isString(),
       body("otp", "OTP is required")
         .notEmpty()
         .isLength({ min: 6, max: 6 })
@@ -206,66 +222,74 @@ class AuthController {
   ];
 
   // @desc      Google AUTH
-  // @route     GET /api/v1/auth/user/google
+  // @route     POST /api/v1/auth/user/google
   // @access    Public
-  googleAuth = async (req: Request, res: Response) => {
-    const token = req?.body?.credential;
-    if (!token) {
-      throw new ErrorResponse("Invalid credentials", HttpStatusCode.BadRequest);
-    }
-    let profile = null;
-
-    if (isIdToken(token)) {
-      // Verify ID Token
-      const verificationResponse = await authService.verifyGoogleIdToken(token);
-
-      profile = verificationResponse.payload;
-    } else {
-      // Verify Access Token
-      const verificationResponse = await authService.verifyGoogleAccessToken(
-        token
-      );
-
-      profile = verificationResponse.payload;
-    }
-
-    if (!profile) {
-      throw new ErrorResponse(
-        "Could not retrieve user profile, please try again",
-        HttpStatusCode.BadRequest
-      );
-    }
-    const { email_verified, given_name, sub, family_name, email, picture } =
-      profile;
-
-    let user: IUser = await userService.getUserByQuery(email);
-
-    if (!user) {
-      const userData: Partial<IUser> = {
-        email,
-        googleIdToken: sub,
-        isEmailVerified: email_verified,
-      };
-
-      if (given_name) {
-        userData.firstName = given_name;
+  googleAuth = [
+    ValidatorMiddleware.inputs([body("token", "token is required").notEmpty()]),
+    async (req: Request, res: Response) => {
+      const token = req?.body?.token;
+      if (!token) {
+        throw new ErrorResponse(
+          "Invalid credentials",
+          HttpStatusCode.BadRequest
+        );
       }
-      if (family_name) {
-        userData.lastName = family_name;
-      }
-      if (picture) {
-        userData.avatar = picture;
+      let profile = null;
+
+      if (isIdToken(token)) {
+        // Verify ID Token
+        const verificationResponse = await authService.verifyGoogleIdToken(
+          token
+        );
+
+        profile = verificationResponse.payload;
+      } else {
+        // Verify Access Token
+        const verificationResponse = await authService.verifyGoogleAccessToken(
+          token
+        );
+
+        profile = verificationResponse.payload;
       }
 
-      user = (await authService.createGoogleUser({ ...userData })) as IUser;
-    }
+      if (!profile) {
+        throw new ErrorResponse(
+          "Could not retrieve user profile, please try again",
+          HttpStatusCode.BadRequest
+        );
+      }
+      const { email_verified, given_name, sub, family_name, email, picture } =
+        profile;
 
-    if (!user?.isEmailVerified && email_verified) {
-      user = await authService.verifyUserEmail(email);
-    }
+      let user: IUser = await userService.getUserByQuery(email);
 
-    return authService.sendTokenResponse(user, 200, res);
-  };
+      if (!user) {
+        const userData: Partial<IUser> = {
+          email,
+          googleIdToken: sub,
+          isEmailVerified: email_verified,
+        };
+
+        if (given_name) {
+          userData.firstName = given_name;
+        }
+        if (family_name) {
+          userData.lastName = family_name;
+        }
+        if (picture) {
+          userData.avatar = picture;
+        }
+
+        user = (await authService.createGoogleUser({ ...userData })) as IUser;
+      }
+
+      if (!user?.isEmailVerified && email_verified) {
+        user = await authService.verifyUserEmail(email);
+      }
+
+      return authService.sendTokenResponse(user, 200, res);
+    },
+  ];
 
   // @desc      Google AUTH Web
   // @route     GET /api/v1/auth/user/initiate-google-auth
