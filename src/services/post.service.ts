@@ -19,20 +19,19 @@ class PostService extends BaseService {
     const record = data && data?.toObject();
     const post = toNativeTypes(record?.post);
     const creator = post?.creator;
-    const topic = post?.topic;
+    const topic = post?.topic ?? "";
     const hashtags = post?.hashtags ?? [];
-    const mentions = post?.mentions ?? [];
+    const mentions = (post?.mentions ?? [])?.filter((v: any) =>
+      Boolean(v?.userId)
+    );
     const liked = Boolean(!!post?.liked);
-    const files = post?.files
-
-    console.log({post})
+    const files = post?.files;
 
     if (post) {
       return toNativeTypes({
         id: post?.id,
         caption: post?.caption,
-        isMyPost:
-          post?.isMyPost || creator?.id == userId,
+        isMyPost: post?.isMyPost || creator?.id == userId,
         createdAt: post?.createdAt,
         files,
         engagement: {
@@ -78,9 +77,6 @@ class PostService extends BaseService {
     );
 
     if (results.records?.length) {
-      console.log({
-        post: results.records[0]?.get("post")?.properties,
-      });
       throw new ErrorResponse("Duplicate post", HttpStatusCode.BadRequest);
     }
   }
@@ -155,7 +151,7 @@ class PostService extends BaseService {
       caption: payload.caption,
       files: payload?.files ?? [],
       createdAt: now.toISOString(),
-      topicSlug: payload?.topicSlug || null,
+      topicSlug: payload?.topicSlug || "",
       hashtags,
       mentions,
     };
@@ -188,19 +184,23 @@ class PostService extends BaseService {
           MERGE (u)-[:${RelationshipTypes.INTERESTED_IN}]->(t)
         )
 
-        WITH p, $postId AS sessionID, u
+        WITH p, u
+
         // // Optional match and delete session
-        OPTIONAL MATCH (session:${NodeLabels.PostSession} {sessionId: sessionID})
+        OPTIONAL MATCH (session:${NodeLabels.PostSession} {sessionId: $postId})
         FOREACH (_ IN CASE WHEN session IS NOT NULL THEN [1] ELSE [] END |
           DETACH DELETE session
         )
 
 
-        WITH p, $files AS files, u
+        WITH p, u, $files AS files
 
         // // Create new file nodes
+        WHERE size(COALESCE(files, [])) > 0
         UNWIND range(0, size(COALESCE(files, []))-1) AS idx
-        WITH p, u, idx, files[idx] AS file, COALESCE(files[idx].tags, []) AS tags,
+
+        WITH p, u, idx, files[idx] AS file //, COALESCE(files[idx].tags, []) AS tags
+
         CREATE (f:${NodeLabels.File})
         SET f.url = file.url, f.key = file.key, f.fileType = file.fileType
 
@@ -208,15 +208,16 @@ class PostService extends BaseService {
         MERGE (p)-[r:${RelationshipTypes.HAS_FILE}]->(f)
         SET r.order = idx
 
-        WITH p, u, f, tags
+        WITH p, u, f, COALESCE(file.tags, []) AS tags
 
         // // create file <-> user tags
         UNWIND tags AS tag
         OPTIONAL MATCH(taggedUser:${NodeLabels.User} {id: tag.userId})
-        FOREACH (_ IN CASE WHEN tagRelationship IS NOT NULL THEN [1] ELSE [] END |
+        OPTIONAL MATCH(u)<-[blockedByUser:${RelationshipTypes.BLOCKED}]-(taggedUser)
+        FOREACH (_ IN CASE WHEN taggedUser IS NOT NULL AND blockedByUser IS NULL THEN [1] ELSE [] END |
             MERGE (f)-[tagRelationship:${RelationshipTypes.TAGGED}]->(taggedUser)
             ON CREATE SET
-             tagRelationship.positionX = COALESCE(tag.positionX,null)
+             tagRelationship.positionX = COALESCE(tag.positionX,null),
              tagRelationship.positionY = COALESCE(tag.positionY,null)
     
             // // create post <-> user mention
@@ -224,45 +225,56 @@ class PostService extends BaseService {
              ON CREATE SET mentionRel.timestamp = datetime($createdAt)
         )
 
-        
-        WITH p, u, $hashtags AS hashtags
+        WITH p, u, f,
+        COLLECT(DISTINCT tag) AS tags
+          
+        WITH p, u, COLLECT(DISTINCT f) AS files, COALESCE($hashtags, []) AS hashtags
 
-        UNWIND COALESCE(hashtags, []) AS hashtag
-        MERGE (h:${NodeLabels.Hashtag} {slug: hashtag})
-        ON CREATE SET 
+        // Handle hashtags
+        FOREACH (hashtag IN hashtags |
+          MERGE (h:${NodeLabels.Hashtag} {slug: hashtag})
+          ON CREATE SET 
             h.popularity = 0,
             h.createdAt = datetime($createdAt)
-        SET h.popularity = COALESCE(h.popularity, 0) + 1,
-            h.lastUsedAt = datetime($createdAt)
+          SET h.popularity = COALESCE(h.popularity, 0) + 1,
+              h.lastUsedAt = datetime($createdAt)
 
-
-        // // Create post <-> hashtags relationship
-        MERGE (p)-[:${RelationshipTypes.HAS_HASHTAG}]->(h)
-        
-        // // Create user <-> hashtags relationship
-        MERGE (u)-[r:${RelationshipTypes.FOLLOWS_HASHTAG}]->(h)
-        ON CREATE SET 
-          r.interestLevel = 5,
-          r.since = datetime()
-
-        WITH p, u, $mentions AS mentions
-        // // Handle user mentions
-
-        UNWIND COALESCE(mentions, []) AS mention
-        OPTIONAL MATCH(userMentioned:${NodeLabels.User} {username: mention})
-        FOREACH (_ IN CASE WHEN userMentioned IS NOT NULL THEN [1] ELSE [] END |
-            MERGE (p)-[r:${RelationshipTypes.MENTIONED}]->(userMentioned)
-            ON CREATE SET r.timestamp = datetime($createdAt)
+          MERGE (p)-[:${RelationshipTypes.HAS_HASHTAG}]->(h)
+          MERGE (u)-[r:${RelationshipTypes.FOLLOWS_HASHTAG}]->(h)
+          ON CREATE SET 
+            r.interestLevel = 5,
+            r.since = datetime()
         )
 
-        RETURN p AS post, u AS creator
+        WITH p, u, COALESCE($mentions, []) AS mentions
+        
+        CALL {
+          WITH p, u, mentions
+           // // Handle user mentions
+          UNWIND mentions AS mention
+          OPTIONAL MATCH(userMentioned:${NodeLabels.User} {username: mention})
+          OPTIONAL MATCH(userMentioned)-[blockedByUser:${RelationshipTypes.BLOCKED}]->(u)
+  
+          FOREACH (_ IN CASE WHEN userMentioned IS NOT NULL AND blockedByUser IS NULL THEN [1] ELSE [] END |
+              MERGE (p)-[r:${RelationshipTypes.MENTIONED}]->(userMentioned)
+              ON CREATE SET r.timestamp = datetime($createdAt)
+          )
+        }
+
+        RETURN p{.*} AS post
       `,
       params
     );
 
-    const postNode = result.records[0];
+    
+    try {
+      const postNode = result.records[0]?.toObject()?.post;
+      return toNativeTypes(postNode) as Post;
+    } catch (error) {
+      console.log("Error publishing post: ", error)
+      return null
+    }
 
-    return this.extractPost(postNode, payload?.userId) as Post;
   }
 
   async deletePost(
@@ -549,23 +561,21 @@ class PostService extends BaseService {
     if (type === "spotlight") {
       cypherQuery = `
           MATCH (u:${NodeLabels.User} {id: $userId})
-          OPTIONAL MATCH (u)-[interest:${RelationshipTypes.INTERESTED_IN}]->(topic:${NodeLabels.Topic})
-                          <-[:${RelationshipTypes.BELONGS_TO}]-(topicPost:${NodeLabels.Post} {isDeleted: false})
-          OPTIONAL MATCH (u)-[:${RelationshipTypes.FOLLOWS_HASHTAG}]
-                          ->(hashtag:${NodeLabels.Hashtag})
-                          <-[:${RelationshipTypes.HAS_HASHTAG}]
-                          -(hashtagPost:${NodeLabels.Post} {isDeleted: false})
+          OPTIONAL MATCH (topicPost:${NodeLabels.Post} {isDeleted: false})-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})<-[interest:${RelationshipTypes.INTERESTED_IN}]-(u)
+          OPTIONAL MATCH (hashtagPost:${NodeLabels.Post} {isDeleted: false})<-[:${RelationshipTypes.HAS_HASHTAG}]-(hashtag:${NodeLabels.Hashtag})<-[:${RelationshipTypes.FOLLOWS_HASHTAG}]-(u)
+          OPTIONAL MATCH (u)-[:${RelationshipTypes.POSTED}]->(userPost:${NodeLabels.Post} {isDeleted: false})
 
           WITH u,
               COLLECT(DISTINCT { post: topicPost, topicScore: interest.interestLevel }) AS topicResults,
-              COLLECT(DISTINCT hashtagPost) AS hashtagPosts
+              COLLECT(DISTINCT hashtagPost) AS hashtagPosts,
+              COLLECT(DISTINCT userPost) AS userPosts
 
           WITH u, topicResults,
               [result IN topicResults | result.post] AS topicPosts,
-              hashtagPosts
+              hashtagPosts, userPosts
 
           WITH u, topicResults, hashtagPosts,
-              apoc.coll.toSet(topicPosts + hashtagPosts) AS allPotentialPosts
+              apoc.coll.toSet(topicPosts + hashtagPosts + userPosts) AS allPotentialPosts
           
           // Filter out posts from blocked users or users who blocked the current user
           UNWIND allPotentialPosts AS post
@@ -601,25 +611,51 @@ class PostService extends BaseService {
           SKIP $skip
           LIMIT $limit
 
-          // now load details for these posts
-          CALL {
-            WITH u, post
-            OPTIONAL MATCH (post)<-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User})
-            OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
-            OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
-            OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
-            OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(f:${NodeLabels.File})
-            ORDER BY r.order
-            
-            WITH post, creator, topic, liked,
-                COLLECT(DISTINCT hashtag.name) AS hashtags,
-                COLLECT(f) AS files
-                
-            RETURN post AS innerPost, creator, topic, liked, hashtags, files
-          }
+          OPTIONAL MATCH (post)<-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User})
+          OPTIONAL MATCH (post)<-[liked:${RelationshipTypes.LIKED}]-(u)
+          OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
 
-          RETURN innerPost AS topic, liked, hashtags, files, relevanceScore, totalCount, {userId: creator.id, username: COALESCE(creator.username, creator.email)} AS creator,
-          post {.*, isMyPost: (creator.id = $userId)} as post
+          WITH u, post, creator, relevanceScore, liked, topic, totalCount
+          
+          OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
+          WITH u, post, creator, relevanceScore, liked, topic, totalCount,
+            COLLECT(DISTINCT hashtag.slug) AS hashtags
+            
+          OPTIONAL MATCH (post)-[mentionRel:${RelationshipTypes.MENTIONED}]->(mentionedUser:${NodeLabels.User})
+          WITH u, post, creator, relevanceScore, liked, topic, totalCount, hashtags,
+              COLLECT(DISTINCT CASE WHEN mentionedUser IS NOT NULL OR mentionRel IS NULL THEN {username: mentionedUser.username, userId: mentionedUser.id} ELSE NULL END) AS mentions
+
+
+          OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(files:${NodeLabels.File})
+          ORDER BY r.order
+
+          OPTIONAL MATCH (file)-[tagRel:${RelationshipTypes.TAGGED}]->(taggedUser:${NodeLabels.User})
+          WITH u, post, creator, relevanceScore, liked, topic, totalCount, hashtags, mentions, file,
+          COLLECT(DISTINCT CASE WHEN taggedUser IS NOT NULL OR tagRel IS NULL THEN 
+          {
+            username: taggedUser.username, 
+            userId: taggedUser.id, 
+            positionX: COALESCE(tagRel.positionX, 0), 
+            positionY: COALESCE(tagRel.positionY, 0)
+          }
+          ELSE NULL END) AS tags
+          
+            WITH u, post, creator, relevanceScore, liked, topic, totalCount, hashtags, mentions, COLLECT({
+              url: file.url,
+              fileType: file.fileType,
+              tags: [ t IN tags WHERE t.username IS NOT NULL ]
+            }) AS files
+                 
+          RETURN totalCount,
+              post {.*, 
+                isMyPost: (creator.id = $userId),
+                topic,
+                liked,
+                hashtags,
+                files,
+                mentions,
+                creator: {userId: creator.id, username: COALESCE(creator.username, creator.email)}
+                } as post
           ORDER BY relevanceScore DESC, post.createdAt DESC
         `;
       queryParams = { userId, skip, limit };
@@ -651,21 +687,54 @@ class PostService extends BaseService {
 
         UNWIND allPosts AS post
 
-        MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(post)
-        OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic}) //optionally we can add user 'interested in topic REL' to add relevance
-        OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag}) //optionally we can add user 'follows in hashtag REL' to add relevance
-        OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
-        
-        WITH post, creator, topic, liked, COLLECT(hashtag.name) as hashtags, totalCount
+        OPTIONAL MATCH (post)<-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User})
+        OPTIONAL MATCH (post)<-[liked:${RelationshipTypes.LIKED}]-(u)
+        OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
 
-        OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(f:${NodeLabels.File})
+        WITH u, post, creator, liked, topic, totalCount
+        
+        OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
+        WITH u, post, creator, liked, topic, totalCount,
+          COLLECT(DISTINCT hashtag.slug) AS hashtags
+          
+        OPTIONAL MATCH (post)-[mentionRel:${RelationshipTypes.MENTIONED}]->(mentionedUser:${NodeLabels.User})
+        WITH u, post, creator, liked, topic, totalCount, hashtags,
+            COLLECT(DISTINCT CASE WHEN mentionedUser IS NOT NULL THEN {username: mentionedUser.username, userId: mentionedUser.id} ELSE NULL END) AS mentions
+
+
+        OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(files:${NodeLabels.File})
         ORDER BY r.order
-        WITH post, creator, topic, liked, hashtags, COLLECT(f) AS files, r, totalCount
 
-        RETURN topic, liked, hashtags, files, totalCount, {userId: creator.id, username: COALESCE(creator.username, creator.email)} AS creator,
-        post {.*, isMyPost: (creator.id = $userId)} as post
-        
-        ORDER BY post.createdAt DESC //relevanceScore DESC
+        OPTIONAL MATCH (file)-[tagRel:${RelationshipTypes.TAGGED}]->(taggedUser:${NodeLabels.User})
+        WITH u, post, creator, liked, topic, totalCount, hashtags, mentions, file,
+        COLLECT(DISTINCT CASE WHEN taggedUser IS NOT NULL OR tagRel IS NULL THEN 
+        {
+          username: taggedUser.username, 
+          userId: taggedUser.id, 
+          positionX: COALESCE(tagRel.positionX, 0), 
+          positionY: COALESCE(tagRel.positionY, 0)
+        }
+        ELSE NULL END) AS tags
+
+        WITH u, post, creator, liked, topic, totalCount, hashtags, mentions, //COLLECT(file) AS files
+        COLLECT({
+          url: file.url,
+          fileType: file.fileType,
+          tags: [ t IN tags WHERE t.username IS NOT NULL ]
+        }) AS files
+                
+        RETURN totalCount,
+            post {.*, 
+              isMyPost: (creator.id = $userId),
+              topic,
+              liked,
+              hashtags,
+              files,
+              mentions,
+              creator: {userId: creator.id, username: COALESCE(creator.username, creator.email)}
+              } as post
+
+        ORDER BY post.createdAt DESC
       `;
       queryParams = { userId, skip, limit };
     }
@@ -705,15 +774,34 @@ class PostService extends BaseService {
       SKIP $skip
       LIMIT $limit
 
-      OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
-      WITH post, creator, totalCount,
-      COLLECT(DISTINCT hashtag.slug) AS hashtags
-      
       OPTIONAL MATCH (creator)-[liked:${RelationshipTypes.LIKED}]->(post)
+
+      OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
+      WITH post, liked, creator, totalCount,
+      COLLECT(DISTINCT hashtag.slug) AS hashtags
+
+      OPTIONAL MATCH (post)-[:${RelationshipTypes.MENTIONED}]->(mentionedUser:${NodeLabels.User})
+      WITH post, liked, creator, totalCount, hashtags,
+      COLLECT(DISTINCT {username: mentionedUser.username, userId: mentionedUser.id}) AS mentions
+      
       OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
       OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(file:${NodeLabels.File})
       ORDER BY r.order
-      WITH post, creator, totalCount, topic, liked, COLLECT(DISTINCT file) AS files, hashtags
+
+      OPTIONAL MATCH (file)-[tagRel:${RelationshipTypes.TAGGED}]->(taggedUser:${NodeLabels.User})
+      WITH post, creator, totalCount, topic, liked, hashtags, mentions, file,
+      COLLECT(DISTINCT {
+        username: taggedUser.username, 
+        userId: taggedUser.id, 
+        positionX: COALESCE(tagRel.positionX, 0), 
+        positionY: COALESCE(tagRel.positionY, 0)
+      }) AS tags
+
+      WITH post, creator, totalCount, topic, liked, hashtags, mentions, COLLECT({
+        url: file.url,
+        fileType: file.fileType,
+        tags: [ t IN tags WHERE t.username IS NOT NULL ]
+      }) AS files
       
       
       RETURN  totalCount,
@@ -723,6 +811,7 @@ class PostService extends BaseService {
           liked, 
           hashtags, 
           files,
+          mentions,
           creator: {userId: creator.id, username: COALESCE(creator.username, creator.email)} 
         } as post
 
@@ -781,18 +870,51 @@ class PostService extends BaseService {
       LIMIT $limit
 
       WITH post, creator, totalCount
-      
-      
-      OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
+
       OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
+      WITH post, creator, totalCount,
+      COLLECT(DISTINCT hashtag.slug) AS hashtags
+      
+      OPTIONAL MATCH (post)-[mentionRel:${RelationshipTypes.MENTIONED}]->(mentionedUser:${NodeLabels.User})
+      WITH post, creator, totalCount, hashtags, mentionRel, mentionedUser // Keep mentionedUser for the filter
+      WHERE mentionedUser IS NOT NULL OR mentionRel IS NULL 
+      WITH post, creator, totalCount, hashtags,
+          COLLECT(DISTINCT CASE WHEN mentionedUser IS NOT NULL THEN {username: mentionedUser.username, userId: mentionedUser.id} ELSE NULL END) AS mentions
+
+
+      OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
       OPTIONAL MATCH (u)-[liked:${RelationshipTypes.LIKED}]->(post)
       OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(files:${NodeLabels.File})
       ORDER BY r.order
-      WITH post, creator, topic, liked, COLLECT(DISTINCT hashtag.name) AS hashtags, COLLECT(files) AS orderedFiles, r, totalCount
-      
-      
-      RETURN  topic, liked, hashtags, orderedFiles AS files, totalCount, {userId: creator.id, username: COALESCE(creator.username, creator.email)} AS creator,
-      post {.*, isMyPost: (creator.id = $loggedInUserId)} as post
+
+      OPTIONAL MATCH (file)-[tagRel:${RelationshipTypes.TAGGED}]->(taggedUser:${NodeLabels.User})
+      WITH post, creator, totalCount, topic, liked, hashtags, mentions, file, tagRel, taggedUser // Keep mentionedUser for the filter
+      WHERE taggedUser IS NOT NULL OR tagRel IS NULL 
+      WITH post, creator, totalCount, topic, liked, hashtags, mentions, file,
+      COLLECT(DISTINCT {
+        username: taggedUser.username, 
+        userId: taggedUser.id, 
+        positionX: COALESCE(tagRel.positionX, 0), 
+        positionY: COALESCE(tagRel.positionY, 0)
+      }) AS tags
+
+      WITH post, creator, totalCount, topic, liked, hashtags, mentions, COLLECT({
+        url: file.url,
+        fileType: file.fileType,
+        tags: [ t IN tags WHERE t.username IS NOT NULL ]
+      }) AS files
+
+      RETURN  totalCount,
+      post {.*, 
+          isMyPost: (creator.id = $loggedInUserId),
+          topic, 
+          liked, 
+          hashtags, 
+          files,
+          mentions,
+          creator: {userId: creator.id, username: COALESCE(creator.username, creator.email)} 
+        } as post
+
       ORDER BY post.createdAt DESC
     `;
 
