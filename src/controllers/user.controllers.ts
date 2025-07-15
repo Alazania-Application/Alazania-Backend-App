@@ -162,11 +162,11 @@ class UserController {
       const currentUser = req?.user?.id;
       const userId = req?.params?.id;
 
-      const users = await userService.getUserProfile({ currentUser, userId });
+      const user = await userService.getUserProfile({ currentUser, userId });
 
       res.status(HttpStatusCode.Ok).json({
         success: true,
-        data: users,
+        data: user,
         message: "Users fetched successfully",
       });
     },

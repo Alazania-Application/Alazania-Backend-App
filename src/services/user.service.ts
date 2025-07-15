@@ -1,4 +1,10 @@
-import { IReadQueryParams, omitDTO, toDTO, valueToNativeType } from "@/utils";
+import {
+  IReadQueryParams,
+  omitDTO,
+  toDTO,
+  toNativeTypes,
+  valueToNativeType,
+} from "@/utils";
 import BaseService from "./base.service";
 import { IUser, UserResponseDto } from "@/models";
 import { NodeLabels, RelationshipTypes } from "@/enums";
@@ -78,7 +84,7 @@ class UserService extends BaseService {
         RETURN currentUser AS user, totalPosts
       `;
     } else {
-       cypherQuery = `
+      cypherQuery = `
         MATCH (currentUser:${NodeLabels.User} {id: $currentUser})
         MATCH (otherUser:${NodeLabels.User} {id: $userId})
         OPTIONAL MATCH (otherUser)-[blockedByUser:${RelationshipTypes.BLOCKED}]->(currentUser)
@@ -98,23 +104,28 @@ class UserService extends BaseService {
           blockedUser
       `;
     }
-    const result = await this.readFromDB(cypherQuery, { currentUser, userId });
-    const doc = result.records[0]?.toObject()
-  
+    
+    let doc = null;
+    try {
+      const result = await this.readFromDB(cypherQuery, { currentUser, userId });
+      doc = toNativeTypes(result.records[0]?.toObject());
+    } catch (error) {
+      console.log("Error transforming data:::  ", error);
+    }
 
-    const totalPosts =
-      valueToNativeType(doc?.totalPosts) ?? 0;
+    if (doc) {
+      const totalPosts = valueToNativeType(doc?.totalPosts) ?? 0;
 
-    const user = this.withPublicDTO(valueToNativeType(doc?.user)) as IUser;
-    user.isFollowingBack = Boolean(doc?.isFollowingBack)
-    user.isFollowing= Boolean(doc?.isFollowing)
+      const user = this.withPublicDTO(doc?.user) as IUser;
 
-    return user
-      ? {
-          ...(user ?? {}),
-          totalPosts,
-        }
-      : null;
+      user.isFollowingBack = Boolean(doc?.isFollowingBack);
+      user.isFollowing = Boolean(doc?.isFollowing);
+      user.totalPosts = totalPosts;
+
+      return user;
+    }
+
+    return null
   };
 
   getUserByQuery = async (query: string = ""): Promise<UserResponseDto> => {
@@ -126,7 +137,7 @@ class UserService extends BaseService {
       `,
       { query }
     );
-    const doc = result.records[0]?.get('u').properties as IUser;
+    const doc = result.records[0]?.get("u").properties as IUser;
     const user = this.withDTO(doc) as IUser;
     return user;
   };
@@ -181,7 +192,7 @@ class UserService extends BaseService {
       { id, updates }
     );
 
-   const doc = result.records?.[0].get("u").properties as IUser;
+    const doc = result.records?.[0].get("u").properties as IUser;
 
     return this.withDTO(doc);
   };
