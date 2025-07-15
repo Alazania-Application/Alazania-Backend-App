@@ -41,11 +41,6 @@ postRouter.get(
   postController.getPostsByHashtag
 );
 
-postRouter.get(
-  "/:id",
-  authMiddleWare.protectRoute,
-  postController.getPostById
-);
 
 
 postRouter.get(
@@ -113,4 +108,10 @@ postRouter.post(
   "/comment/:commentId/reply",
   authMiddleWare.protectRoute,
   postController.replyToComment
+);
+
+postRouter.get(
+  "/:id",
+  authMiddleWare.protectRoute,
+  postController.getPostById
 );
