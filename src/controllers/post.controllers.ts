@@ -220,7 +220,9 @@ class PostController {
 
       res.status(201).json({
         message: "Post session initialized successfully!",
-        data,
+        data: {
+          sessionId: data?.sessionId
+        },
       });
     },
   ];
