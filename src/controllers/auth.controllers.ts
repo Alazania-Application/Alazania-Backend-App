@@ -228,12 +228,14 @@ class AuthController {
     ValidatorMiddleware.inputs([body("token", "token is required").notEmpty()]),
     async (req: Request, res: Response) => {
       const token = req?.body?.token;
+
       if (!token) {
         throw new ErrorResponse(
           "Invalid credentials",
           HttpStatusCode.BadRequest
         );
       }
+      
       let profile = null;
 
       if (isIdToken(token)) {
