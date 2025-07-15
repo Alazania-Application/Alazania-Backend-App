@@ -36,6 +36,19 @@ postRouter.get(
 );
 
 postRouter.get(
+  "/hashtag",
+  authMiddleWare.protectRoute,
+  postController.getPostsByHashtag
+);
+
+postRouter.get(
+  "/:id",
+  authMiddleWare.protectRoute,
+  postController.getPostById
+);
+
+
+postRouter.get(
   "/following",
   authMiddleWare.protectRoute,
   postController.getFollowingPosts

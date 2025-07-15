@@ -7,14 +7,11 @@ import ValidatorMiddleware from "@/middlewares/validator.middleware";
 import { IPostFile } from "@/models";
 import { postService } from "@/services";
 import { ErrorResponse } from "@/utils";
-import {
-  CopyObjectCommand,
-  PutObjectCommand,
-} from "@aws-sdk/client-s3";
+import { CopyObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { HttpStatusCode } from "axios";
 import { Request, Response } from "express";
-import { body, param } from "express-validator";
+import { body, param, query } from "express-validator";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
 
@@ -82,7 +79,8 @@ class PostController {
       body("files.*.tags.*.userId", "User id is required for tags")
         .if(body("files.*.tags").notEmpty())
         .notEmpty()
-        .isUUID().withMessage("Invalid User id"),
+        .isUUID()
+        .withMessage("Invalid User id"),
       body("files.*.tags.*.positionX", "positionX should be a number")
         .if(body("files.*.tags").notEmpty())
         .optional()
@@ -221,7 +219,7 @@ class PostController {
       res.status(201).json({
         message: "Post session initialized successfully!",
         data: {
-          sessionId: data?.sessionId
+          sessionId: data?.sessionId,
         },
       });
     },
@@ -265,6 +263,54 @@ class PostController {
         data,
         pagination,
         message: "Posts fetched successfully",
+      });
+    },
+  ];
+
+  getPostById = [
+    ValidatorMiddleware.inputs([
+      param("id", "Post ID is required")
+        .notEmpty()
+        .isUUID()
+        .withMessage("Invalid post ID"),
+    ]),
+    async (req: Request, res: Response) => {
+      const userId = req?.user?.id ?? "";
+      const postId = req?.params?.id ?? "";
+
+      const post = await postService.getPostById({
+        userId,
+        postId,
+      });
+
+      res.status(HttpStatusCode.Ok).json({
+        success: true,
+        data: post,
+        message: "Post fetched successfully",
+      });
+    },
+  ];
+
+  getPostsByHashtag = [
+    ValidatorMiddleware.inputs([
+      query("hashtag", "hashtag is required").notEmpty().isString(),
+    ]),
+
+    async (req: Request, res: Response) => {
+      const userId = req?.user?.id;
+      const hashtag = String(req.query?.hashtag ?? "").replace(/#/g, "");
+
+      const { posts: data, pagination } = await postService.getHashtagPosts({
+        userId,
+        hashtag,
+        ...req.query,
+      });
+
+      res.status(HttpStatusCode.Ok).json({
+        success: true,
+        data,
+        pagination,
+        message: `Hashtag:(${hashtag}) Posts fetched successfully`,
       });
     },
   ];
@@ -434,7 +480,9 @@ class PostController {
     ValidatorMiddleware.inputs([
       param("postId", "postId is required").notEmpty().isUUID(),
       body("comment", "Cannot post an empty comment").notEmpty().isString(),
-      body("parentCommentId", "parentCommentId is required").notEmpty().isUUID(),
+      body("parentCommentId", "parentCommentId is required")
+        .notEmpty()
+        .isUUID(),
     ]),
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
