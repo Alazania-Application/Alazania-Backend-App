@@ -40,7 +40,7 @@ class PostService extends BaseService {
           shares: post?.shares,
         },
         creator,
-        topic: topic ? topic?.name : null,
+        topic: topic ? topic?.name : "",
         hashtags,
         mentions,
         liked,
@@ -266,15 +266,13 @@ class PostService extends BaseService {
       params
     );
 
-    
     try {
       const postNode = result.records[0]?.toObject()?.post;
       return toNativeTypes(postNode) as Post;
     } catch (error) {
-      console.log("Error publishing post: ", error)
-      return null
+      console.log("Error publishing post: ", error);
+      return null;
     }
-
   }
 
   async deletePost(
@@ -547,16 +545,168 @@ class PostService extends BaseService {
     }));
   }
 
+  async getHashtagPosts({
+    userId,
+    hashtag,
+    ...params
+  }: IReadQueryParams & {
+    userId: string;
+    hashtag: string;
+  }) {
+    const cypherQuery = `
+      MATCH (u:${NodeLabels.User} {id: $userId})
+      MATCH (hashtag:${NodeLabels.Hashtag} {slug: toLower($hashtag)})<-[${RelationshipTypes.HAS_HASHTAG}]-
+      (post:${NodeLabels.Post})<-[${RelationshipTypes.POSTED}]-
+      (creator:${NodeLabels.User})
+
+      OPTIONAL MATCH(post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
+      OPTIONAL MATCH(u)<-[liked:${RelationshipTypes.LIKED}]-(post)
+      OPTIONAL MATCH(u)-[blockedUser:${RelationshipTypes.BLOCKED}]->(creator)
+      OPTIONAL MATCH(u)<-[blockedByUser:${RelationshipTypes.BLOCKED}]-(creator)
+
+      WHERE u IS NOT NULL AND post IS NOT NULL AND creator IS NOT NULL AND blockedByUser IS NULL AND blockedUser IS NULL
+
+      WITH u, creator, post, topic, liked, size(COLLECT(DISTINCT post)) AS totalCount
+      SKIP $skip
+      LIMIT $limit
+
+
+      OPTIONAL MATCH (post)-[mentionRel:${RelationshipTypes.MENTIONED}]->(mentionedUser:${NodeLabels.User})
+
+      WITH u, post, creator, topic, liked,  totalCount,
+          COLLECT(DISTINCT CASE WHEN mentionedUser IS NOT NULL OR mentionRel IS NULL THEN {username: mentionedUser.username, userId: mentionedUser.id} ELSE NULL END) AS mentions
+
+      OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
+       WITH u, post, creator, topic, liked, totalCount, mentions,
+        COLLECT(DISTINCT hashtag.slug) AS hashtags
+
+      OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(files:${NodeLabels.File})
+      ORDER BY r.order
+
+
+      OPTIONAL MATCH (file)-[tagRel:${RelationshipTypes.TAGGED}]->(taggedUser:${NodeLabels.User})
+      WITH u, post, creator, topic, liked, totalCount, mentions, hashtags, file,
+      COLLECT(DISTINCT CASE WHEN taggedUser IS NOT NULL OR tagRel IS NULL THEN 
+      {
+        username: taggedUser.username, 
+        userId: taggedUser.id, 
+        positionX: COALESCE(tagRel.positionX, 0), 
+        positionY: COALESCE(tagRel.positionY, 0)
+      }
+      ELSE NULL END) AS tags
+
+      WITH u, post, creator, liked, topic, hashtags, mentions, totalCount, COLLECT({
+          url: file.url,
+          fileType: file.fileType,
+          tags: [ t IN tags WHERE t.username IS NOT NULL ]
+        }) AS files
+
+
+      RETURN totalCount,
+            post {.*, 
+              isMyPost: (creator.id = $userId),
+              liked,
+              files,
+              mentions,
+              creator: {userId: creator.id, username: COALESCE(creator.username, creator.email)}
+              } as post
+
+        ORDER BY post.createdAt DESC
+    `;
+
+    const { result, pagination } = await this.readFromDB(
+      cypherQuery,
+      {
+        userId,
+        hashtag,
+        ...params,
+      },
+      true
+    );
+
+    const posts = result.records
+      .map((record: any) => {
+        return this.extractPost(record, userId);
+      })
+      .filter(Boolean); // Filter out any null entries if they occurred
+
+    return { posts, pagination };
+  }
+
+  async getPostById(
+    params: {
+      userId: string;
+      postId: string;
+    } = { userId: "", postId: "" }
+  ) {
+    const cypherQuery = `
+      MATCH(u:${NodeLabels.User} {id: $userId})
+      MATCH (post:${NodeLabels.Post} {id:$postId})<-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User})
+      OPTIONAL MATCH(u)-[blockedUser:${RelationshipTypes.BLOCKED}]->(creator)
+      OPTIONAL MATCH(u)<-[blockedByUser:${RelationshipTypes.BLOCKED}]-(creator)
+
+      WHERE blockedUser IS NULL AND blockedByUser IS NULL
+
+      OPTIONAL MATCH (post)<-[liked:${RelationshipTypes.LIKED}]-(u)
+      OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
+
+      WITH u, post, creator, liked, topic
+      
+      OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_HASHTAG}]->(hashtag:${NodeLabels.Hashtag})
+      WITH u, post, creator, liked, topic,
+        COLLECT(DISTINCT hashtag.slug) AS hashtags
+        
+      OPTIONAL MATCH (post)-[mentionRel:${RelationshipTypes.MENTIONED}]->(mentionedUser:${NodeLabels.User})
+       WITH u, post, creator, liked, topic, hashtags,
+          COLLECT(DISTINCT CASE WHEN mentionedUser IS NOT NULL OR mentionRel IS NULL THEN {username: mentionedUser.username, userId: mentionedUser.id} ELSE NULL END) AS mentions
+
+
+      OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(files:${NodeLabels.File})
+      ORDER BY r.order
+
+      OPTIONAL MATCH (file)-[tagRel:${RelationshipTypes.TAGGED}]->(taggedUser:${NodeLabels.User})
+      WITH u, post, creator, liked, topic, hashtags, mentions, file,
+      COLLECT(DISTINCT CASE WHEN taggedUser IS NOT NULL OR tagRel IS NULL THEN 
+      {
+        username: taggedUser.username, 
+        userId: taggedUser.id, 
+        positionX: COALESCE(tagRel.positionX, 0), 
+        positionY: COALESCE(tagRel.positionY, 0)
+      }
+      ELSE NULL END) AS tags
+
+      WITH u, post, creator, liked, topic, hashtags, mentions, COLLECT({
+          url: file.url,
+          fileType: file.fileType,
+          tags: [ t IN tags WHERE t.username IS NOT NULL ]
+        }) AS files
+
+      RETURN post {.*, 
+                isMyPost: (creator.id = $userId),
+                topic,
+                liked,
+                hashtags,
+                files,
+                mentions,
+                creator: {userId: creator.id, username: COALESCE(creator.username, creator.email)}
+              } as post
+    `;
+
+    const result = await this.readFromDB(cypherQuery, params);
+    const post= this.extractPost(result.records[0])
+    return post
+  }
+
   // Get posts
   async getFeed(
     userId: string,
     params: IReadQueryParams = {},
     type: "following" | "spotlight"
   ): Promise<{ posts: any[]; pagination: IPagination }> {
-    const { skip = 0, limit = 10 } = params; // Default skip and limit
+    // const { skip = 0, limit = 10 } = params; // Default skip and limit
 
     let cypherQuery: string;
-    let queryParams: Record<string, any>;
+    let queryParams: Record<string, any> = { ...params, userId };
 
     if (type === "spotlight") {
       cypherQuery = `
@@ -640,11 +790,11 @@ class PostService extends BaseService {
           }
           ELSE NULL END) AS tags
           
-            WITH u, post, creator, relevanceScore, liked, topic, totalCount, hashtags, mentions, COLLECT({
-              url: file.url,
-              fileType: file.fileType,
-              tags: [ t IN tags WHERE t.username IS NOT NULL ]
-            }) AS files
+          WITH u, post, creator, relevanceScore, liked, topic, totalCount, hashtags, mentions, COLLECT({
+            url: file.url,
+            fileType: file.fileType,
+            tags: [ t IN tags WHERE t.username IS NOT NULL ]
+          }) AS files
                  
           RETURN totalCount,
               post {.*, 
@@ -658,7 +808,6 @@ class PostService extends BaseService {
                 } as post
           ORDER BY relevanceScore DESC, post.createdAt DESC
         `;
-      queryParams = { userId, skip, limit };
     } else {
       cypherQuery = `
         MATCH (u:${NodeLabels.User} {id: $userId})
@@ -736,7 +885,6 @@ class PostService extends BaseService {
 
         ORDER BY post.createdAt DESC
       `;
-      queryParams = { userId, skip, limit };
     }
 
     const { result, pagination } = await this.readFromDB(
