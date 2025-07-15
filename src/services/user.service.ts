@@ -36,6 +36,7 @@ class UserService extends BaseService {
         "isFollowingBack",
         "blockedByUser",
         "blockedUser",
+        "totalPosts",
         "bio",
         ...extraFields,
       ]);
@@ -47,12 +48,12 @@ class UserService extends BaseService {
   getUserById = async (id: string): Promise<UserResponseDto | null> => {
     const result = await this.readFromDB(
       `
-        MATCH (u:${NodeLabels.User} {id: $id})
-        RETURN u
+        MATCH (user:${NodeLabels.User} {id: $id})
+        RETURN user
       `,
       { id }
     );
-    const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
+    const doc = result.records?.[0].get("user").properties as IUser;
 
     const user = this.withDTO(doc) as IUser;
 
@@ -67,18 +68,17 @@ class UserService extends BaseService {
     userId: string;
   }): Promise<UserResponseDto | null> => {
     let cypherQuery = "";
-    if (currentUser && userId) {
+    if (currentUser == userId) {
       cypherQuery = `
         MATCH (currentUser:${NodeLabels.User} {id: $currentUser})
         OPTIONAL MATCH (post:${NodeLabels.Post} {isDeleted:false})<-[:${RelationshipTypes.POSTED}]-(u) 
 
-        WITH u, COUNT(post) AS totalPosts
+        WITH currentUser, COUNT(post) AS totalPosts
 
-        RETURN u, totalPosts
+        RETURN currentUser AS user, totalPosts
       `;
-      return null;
     } else {
-      `
+       cypherQuery = `
         MATCH (currentUser:${NodeLabels.User} {id: $currentUser})
         MATCH (otherUser:${NodeLabels.User} {id: $userId})
         OPTIONAL MATCH (otherUser)-[blockedByUser:${RelationshipTypes.BLOCKED}]->(currentUser)
@@ -88,24 +88,26 @@ class UserService extends BaseService {
         AND blockedByUser IS NULL 
         
         OPTIONAL MATCH (currentUser)-[followsUser:${RelationshipTypes.FOLLOWS}]->(otherUser)
-        OPTIONAL MATCH (otherUser)-[followedByUser:${RelationshipTypes.FOLLOWS}]->(currentUser)
-        OPTIONAL MATCH (post:${NodeLabels.Post} {isDeleted:false})<-[:${RelationshipTypes.POSTED}]-(u) 
+        OPTIONAL MATCH (currentUser)<-[followedByUser:${RelationshipTypes.FOLLOWS}]-(otherUser)
+        OPTIONAL MATCH (post:${NodeLabels.Post} {isDeleted:false})<-[:${RelationshipTypes.POSTED}]-(otherUser) 
 
-        RETURN u {.*, 
-        isFollowingBack: (followedByUser IS NOT NULL),
-        isFollowing: (followsUser IS NOT NULL),
-        blockedByUser: (blockedByUser IS NOT NULL),
-        blockedUser: (blockedUser IS NOT NULL),
-        } AS u, 
-        COUNT(post) AS totalPosts
+        RETURN COUNT(post) AS totalPosts, otherUser AS user, 
+          followedByUser AS isFollowingBack,
+          followsUser AS isFollowing,
+          blockedByUser,
+          blockedUser
       `;
     }
     const result = await this.readFromDB(cypherQuery, { currentUser, userId });
-    const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
-    const totalPosts =
-      valueToNativeType(result?.records[0]?.get("totalPosts")) ?? 0;
+    const doc = result.records[0]?.toObject()
+  
 
-    const user = this.withPublicDTO(doc) as IUser;
+    const totalPosts =
+      valueToNativeType(doc?.totalPosts) ?? 0;
+
+    const user = this.withPublicDTO(valueToNativeType(doc?.user)) as IUser;
+    user.isFollowingBack = Boolean(doc?.isFollowingBack)
+    user.isFollowing= Boolean(doc?.isFollowing)
 
     return user
       ? {
@@ -124,7 +126,7 @@ class UserService extends BaseService {
       `,
       { query }
     );
-    const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
+    const doc = result.records[0]?.get('u').properties as IUser;
     const user = this.withDTO(doc) as IUser;
     return user;
   };
@@ -140,7 +142,7 @@ class UserService extends BaseService {
       `,
       { query }
     );
-    return result.records.map((v) => v.get("u").properties)[0] as IUser;
+    return result.records[0].get("u").properties as IUser;
   };
 
   updateOnboardUser = async (id: string = "", payload: Partial<IUser> = {}) => {
@@ -155,7 +157,7 @@ class UserService extends BaseService {
       { id, updates }
     );
 
-    const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
+    const doc = result.records?.[0]?.get("u").properties as IUser;
 
     return this.withDTO(doc);
   };
@@ -179,7 +181,7 @@ class UserService extends BaseService {
       { id, updates }
     );
 
-    const doc = result.records.map((v) => v.get("u").properties)[0] as IUser;
+   const doc = result.records?.[0].get("u").properties as IUser;
 
     return this.withDTO(doc);
   };

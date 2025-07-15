@@ -1,4 +1,3 @@
-import { Request } from "express";
 import jsonWebToken from "jsonwebtoken/index";
 import {
   Integer,
@@ -10,6 +9,7 @@ import {
   isLocalTime,
   isTime,
   int,
+  isNode,
 } from "neo4j-driver";
 import slugify from "slugify";
 /**
@@ -141,6 +141,8 @@ export function valueToNativeType(value: any) {
     isDuration(value)
   ) {
     value = value.toString();
+  } else if (isNode(value)) {
+    value = valueToNativeType(value?.properties || value?.toString());
   } else if (
     typeof value === "object" &&
     value !== undefined &&
@@ -207,6 +209,21 @@ export const isIdToken = (token: string) => {
   return token.split(".").length === 3;
 };
 
+export function getEmailLocalPart(email: string= "") {
+  const regex = /^([^@]+)@/;
+  const match = email.match(regex);
+
+  if (match && match[1]) {
+    // match[0] would be the full match (e.g., "john.doe@")
+    // match[1] is the content of the first capturing group (e.g., "john.doe")
+    return match[1];
+  } else {
+    // Handle cases where the email format might be invalid or not match
+    return email; // Or throw an error, or return an empty string
+  }
+}
+
+
 export const extractHashtags = (text: string) => {
   return [
     ...new Set(
@@ -214,7 +231,7 @@ export const extractHashtags = (text: string) => {
         slugify(tag, {
           trim: true,
           lower: true,
-          remove: /#/g
+          remove: /#/g,
         })
       )
     ),
@@ -224,7 +241,9 @@ export const extractHashtags = (text: string) => {
 export const extractMentions = (text: string) => {
   return [
     ...new Set(
-      (text.match(/@\w+/g) || []).map((tag) => String(tag)?.toLowerCase()?.trim())
+      (text.match(/@\w+/g) || []).map((tag) =>
+        String(tag)?.toLowerCase()?.trim()
+      )
     ),
   ];
 };
