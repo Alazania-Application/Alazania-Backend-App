@@ -583,7 +583,7 @@ class PostService extends BaseService {
       OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(files:${NodeLabels.File})
       ORDER BY r.order
 
-
+      UNWIND files AS file
       OPTIONAL MATCH (file)-[tagRel:${RelationshipTypes.TAGGED}]->(taggedUser:${NodeLabels.User})
       WITH u, post, creator, topic, liked, totalCount, mentions, hashtags, file,
       COLLECT(DISTINCT CASE WHEN taggedUser IS NOT NULL OR tagRel IS NULL THEN 
@@ -664,6 +664,7 @@ class PostService extends BaseService {
       OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(files:${NodeLabels.File})
       ORDER BY r.order
 
+      UNWIND files AS file
       OPTIONAL MATCH (file)-[tagRel:${RelationshipTypes.TAGGED}]->(taggedUser:${NodeLabels.User})
       WITH u, post, creator, liked, topic, hashtags, mentions, file,
       COLLECT(DISTINCT CASE WHEN taggedUser IS NOT NULL OR tagRel IS NULL THEN 
@@ -779,6 +780,7 @@ class PostService extends BaseService {
           OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(files:${NodeLabels.File})
           ORDER BY r.order
 
+          UNWIND files AS file
           OPTIONAL MATCH (file)-[tagRel:${RelationshipTypes.TAGGED}]->(taggedUser:${NodeLabels.User})
           WITH u, post, creator, relevanceScore, liked, topic, totalCount, hashtags, mentions, file,
           COLLECT(DISTINCT CASE WHEN taggedUser IS NOT NULL OR tagRel IS NULL THEN 
@@ -854,6 +856,7 @@ class PostService extends BaseService {
         OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(files:${NodeLabels.File})
         ORDER BY r.order
 
+        UNWIND files AS file
         OPTIONAL MATCH (file)-[tagRel:${RelationshipTypes.TAGGED}]->(taggedUser:${NodeLabels.User})
         WITH u, post, creator, liked, topic, totalCount, hashtags, mentions, file,
         COLLECT(DISTINCT CASE WHEN taggedUser IS NOT NULL OR tagRel IS NULL THEN 
@@ -935,6 +938,7 @@ class PostService extends BaseService {
       OPTIONAL MATCH (post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
       OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(file:${NodeLabels.File})
       ORDER BY r.order
+
 
       OPTIONAL MATCH (file)-[tagRel:${RelationshipTypes.TAGGED}]->(taggedUser:${NodeLabels.User})
       WITH post, creator, totalCount, topic, liked, hashtags, mentions, file,
@@ -1035,6 +1039,7 @@ class PostService extends BaseService {
       OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(files:${NodeLabels.File})
       ORDER BY r.order
 
+      UNWIND files AS file
       OPTIONAL MATCH (file)-[tagRel:${RelationshipTypes.TAGGED}]->(taggedUser:${NodeLabels.User})
       WITH post, creator, totalCount, topic, liked, hashtags, mentions, file, tagRel, taggedUser // Keep mentionedUser for the filter
       WHERE taggedUser IS NOT NULL OR tagRel IS NULL 

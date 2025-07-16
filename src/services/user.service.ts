@@ -104,10 +104,13 @@ class UserService extends BaseService {
           blockedUser
       `;
     }
-    
+
     let doc = null;
     try {
-      const result = await this.readFromDB(cypherQuery, { currentUser, userId });
+      const result = await this.readFromDB(cypherQuery, {
+        currentUser,
+        userId,
+      });
       doc = toNativeTypes(result.records[0]?.toObject());
     } catch (error) {
       console.log("Error transforming data:::  ", error);
@@ -125,7 +128,7 @@ class UserService extends BaseService {
       return user;
     }
 
-    return null
+    return null;
   };
 
   getUserByQuery = async (query: string = ""): Promise<UserResponseDto> => {
@@ -417,6 +420,9 @@ class UserService extends BaseService {
     currentUserId: string = "",
     userToFollowId: string = ""
   ) => {
+    if (currentUserId == userToFollowId) {
+      return;
+    }
     const query = `
       MATCH (currentUser: ${NodeLabels.User} {id: $currentUserId})
       MATCH (userToFollow: ${NodeLabels.User} {id: $userToFollowId})
@@ -454,6 +460,9 @@ class UserService extends BaseService {
     currentUserId: string = "",
     userToUnfollowId: string = ""
   ) => {
+    if (currentUserId == userToUnfollowId) {
+      return;
+    }
     const query = `
       MATCH (currentUser: ${NodeLabels.User} {id: $currentUserId})
       MATCH (userToUnfollow: ${NodeLabels.User} {id: $userToUnfollowId})
@@ -487,157 +496,148 @@ class UserService extends BaseService {
   };
 
   getUserFollowing = async (
-    currentUserId: string = "",
-    userToMatchId: string = ""
+    params: IReadQueryParams & {
+      loggedInUser: string;
+      userToMatchId: string;
+    } = { loggedInUser: "", userToMatchId: "" }
   ) => {
     const query = `
-      MATCH (currentUser: ${NodeLabels.User} {id: $currentUserId})
+      MATCH (currentUser: ${NodeLabels.User} {id: $loggedInUser})
       MATCH (userToMatch: ${NodeLabels.User} {id: $userToMatchId})
       
       OPTIONAL MATCH (currentUser)<-[blockedByUser:${RelationshipTypes.BLOCKED}]-(userToMatch)
       WHERE userToMatch IS NOT NULL AND blockedByUser IS NULL 
 
-      MATCH (user: ${NodeLabels.User})<-[:${RelationshipTypes.FOLLOWS}]-(userToMatch)
-
-      WHERE user.id <> $userToMatchId
-
       OPTIONAL MATCH (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(user)
-      OPTIONAL MATCH (user)-[isFollowingBack:${RelationshipTypes.FOLLOWS}]->(currentUser)
+      OPTIONAL MATCH (currentUser)<-[isFollowingBack:${RelationshipTypes.FOLLOWS}]-(user)
+      OPTIONAL MATCH (post:${NodeLabels.Post} {isDeleted:false})<-[:${RelationshipTypes.POSTED}]-(user) 
+
+      WITH user, userToMatch, isFollowing, isFollowingBack, COUNT(post) AS totalPosts
       
-      RETURN user, isFollowingBack, isFollowing
+      RETURN COALESCE(userToMatch.following, 0) AS totalCount, user{.*,
+        isFollowingBack: (isFollowingBack IS NOT NUll), 
+        isFollowing: (isFollowing IS NOT NUll),
+        totalPosts
+      } AS user
+
+      SKIP $skip
       LIMIT $limit
     `;
 
-    const result = await this.readFromDB(query, {
-      currentUserId,
-      userToMatchId,
-      timestamp: new Date().toISOString(),
-    });
+    const { result, pagination } = await this.readFromDB(query, params, true);
 
     const users = result.records.map((v) => {
-      const user = this.withPublicDTO({
-        ...v.get("user").properties,
-      }) as any;
-
-      if (user?.id !== currentUserId) {
-        user.isFollowing = Boolean(v.get("isFollowing")?.properties);
-        user.isFollowingBack = Boolean(v.get("isFollowingBack")?.properties);
-      }
-
-      return user;
+      return this.withPublicDTO(v.get("user")) as IUser;
     }) as IUser[];
 
-    return users;
+    return { users, pagination };
   };
 
   getUserFollowers = async (
-    currentUserId: string = "",
-    userToMatchId: string = ""
+    params: IReadQueryParams & {
+      loggedInUser: string;
+      userToMatchId: string;
+    } = { loggedInUser: "", userToMatchId: "" }
   ) => {
     const query = `
-      MATCH (currentUser: ${NodeLabels.User} {id: $currentUserId})
+      MATCH (currentUser: ${NodeLabels.User} {id: $loggedInUser})
       MATCH (userToMatch: ${NodeLabels.User} {id: $userToMatchId})
 
       OPTIONAL MATCH (currentUser)<-[blockedByUser:${RelationshipTypes.BLOCKED}]-(userToMatch)
-      WHERE userToMatch IS NOT NULL AND blockedByUser IS NULL 
+      WHERE userToMatch IS NOT NULL AND blockedByUser IS NULL
+      
 
-      MATCH (user: ${NodeLabels.User})-[:${RelationshipTypes.FOLLOWS}]->(userToMatch)
-      WHERE user.id <> $userToMatchId
+      MATCH (userToMatch)<-[:${RelationshipTypes.FOLLOWS}]-(user: ${NodeLabels.User})
 
       OPTIONAL MATCH (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(user)
       OPTIONAL MATCH (user)-[isFollowingBack:${RelationshipTypes.FOLLOWS}]->(currentUser)
+      OPTIONAL MATCH (post:${NodeLabels.Post} {isDeleted:false})<-[:${RelationshipTypes.POSTED}]-(user) 
+
+      WITH user,userToMatch, isFollowing, isFollowingBack, COUNT(post) AS totalPosts
       
-      RETURN user, isFollowingBack, isFollowing
+      RETURN COALESCE(userToMatch.followers, 0) AS totalCount, user{.*,
+        isFollowingBack: (isFollowingBack IS NOT NUll), 
+        isFollowing: (isFollowing IS NOT NUll),
+        totalPosts
+      } AS user
+      
+      SKIP $skip
       LIMIT $limit
     `;
 
-    const result = await this.readFromDB(query, {
-      currentUserId,
-      userToMatchId,
-    });
+    const { result, pagination } = await this.readFromDB(query, params, true);
 
     const users = result.records.map((v) => {
-      const user = this.withPublicDTO({
-        ...v.get("user").properties,
-      }) as any;
-
-      if (user?.id !== currentUserId) {
-        user.isFollowing = Boolean(v.get("isFollowing")?.properties);
-        user.isFollowingBack = Boolean(v.get("isFollowingBack")?.properties);
-      }
-
-      return user;
+      return this.withPublicDTO(v.get("user")) as IUser;
     }) as IUser[];
 
-    return users;
+    return { users, pagination };
   };
 
-  getMyFollowing = async (currentUserId: string = "") => {
+  getMyFollowing = async (
+    params: IReadQueryParams & { currentUserId: string } = { currentUserId: "" }
+  ) => {
     const query = `
       MATCH (currentUser: ${NodeLabels.User} {id: $currentUserId})
-      MATCH (userToMatch: ${NodeLabels.User})
 
-      MATCH (user: ${NodeLabels.User})<-[:${RelationshipTypes.FOLLOWS}]-(userToMatch)
-      WHERE user.id <> userToMatch.id
+      MATCH (currentUser)-[:${RelationshipTypes.FOLLOWS}]->(user: ${NodeLabels.User})
 
       OPTIONAL MATCH (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(user)
-      OPTIONAL MATCH (user)-[isFollowingBack:${RelationshipTypes.FOLLOWS}]->(currentUser)
+      OPTIONAL MATCH (currentUser)<-[isFollowingBack:${RelationshipTypes.FOLLOWS}]-(user)
+      OPTIONAL MATCH (post:${NodeLabels.Post} {isDeleted:false})<-[:${RelationshipTypes.POSTED}]-(user) 
+
+      WITH user, currentUser, isFollowing, isFollowingBack, COUNT(post) AS totalPosts
       
-      RETURN user, isFollowingBack, isFollowing
+      RETURN user{ .*,
+        isFollowingBack: (isFollowingBack IS NOT NUll), 
+        isFollowing: (isFollowing IS NOT NUll),
+        totalPosts
+      } AS user, COALESCE(currentUser.following, 0) AS totalCount
+
+      SKIP $skip
       LIMIT $limit
     `;
 
-    const result = await this.readFromDB(query, {
-      currentUserId,
-    });
+    const { result, pagination } = await this.readFromDB(query, params, true);
 
     const users = result.records.map((v) => {
-      const user = this.withPublicDTO({
-        ...v.get("user").properties,
-      }) as any;
-
-      if (user?.id !== currentUserId) {
-        user.isFollowing = Boolean(v.get("isFollowing")?.properties);
-        user.isFollowingBack = Boolean(v.get("isFollowingBack")?.properties);
-      }
-
-      return user;
+      return this.withPublicDTO(v.get("user")) as IUser;
     }) as IUser[];
 
-    return users;
+    return { users, pagination };
   };
 
-  getMyFollowers = async (currentUserId: string = "") => {
+  getMyFollowers = async (
+    params: IReadQueryParams & { currentUserId: string } = { currentUserId: "" }
+  ) => {
     const query = `
       MATCH (currentUser: ${NodeLabels.User} {id: $currentUserId})
-      MATCH (userToMatch: ${NodeLabels.User})
 
-      MATCH (user: ${NodeLabels.User})-[:${RelationshipTypes.FOLLOWS}]->(userToMatch)
-      WHERE user.id <> userToMatch.id
+      MATCH (currentUser)<-[:${RelationshipTypes.FOLLOWS}]-(user: ${NodeLabels.User})
 
       OPTIONAL MATCH (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(user)
-      OPTIONAL MATCH (user)-[isFollowingBack:${RelationshipTypes.FOLLOWS}]->(currentUser)
+      OPTIONAL MATCH (currentUser)<-[isFollowingBack:${RelationshipTypes.FOLLOWS}]-(user)
+      OPTIONAL MATCH (post:${NodeLabels.Post} {isDeleted:false})<-[:${RelationshipTypes.POSTED}]-(user) 
+
+      WITH user, currentUser, isFollowing, isFollowingBack, COUNT(post) AS totalPosts
       
-      RETURN user, isFollowingBack, isFollowing
+      RETURN user{ .*,
+        isFollowingBack: (isFollowingBack IS NOT NUll), 
+        isFollowing: (isFollowing IS NOT NUll),
+        totalPosts
+      } AS user, COALESCE(currentUser.followers, 0) AS totalCount
+
+      SKIP $skip
       LIMIT $limit
     `;
 
-    const result = await this.readFromDB(query, {
-      currentUserId,
-    });
+    const { result, pagination } = await this.readFromDB(query, params, true);
 
     const users = result.records.map((v) => {
-      const user = this.withPublicDTO(v.get("user")?.properties) as any;
-
-      if (user?.id !== currentUserId) {
-        user.isFollowing = Boolean(v.get("isFollowing")?.properties);
-        user.isFollowingBack = Boolean(v.get("isFollowingBack")?.properties);
-      }
-
-      return user;
+      return this.withPublicDTO(v.get("user")) as IUser;
     }) as IUser[];
 
-    return users;
+    return { users, pagination };
   };
 }
 

@@ -88,11 +88,13 @@ export default class BaseService {
     finalParams.limit = neo4j.int(finalParams.limit || 10);
     finalParams.skip = neo4j.int(finalParams.skip || 0);
 
+    
     const result = await session
-      .executeRead((tx: ManagedTransaction) => tx.run<T>(cypher, finalParams))
-      .finally(async () => {
-        await session.close();
-      });
+    .executeRead((tx: ManagedTransaction) => tx.run<T>(cypher, finalParams))
+    .finally(async () => {
+      await session.close();
+    });
+  
 
     let totalCount = 0;
     if (paginated) {
