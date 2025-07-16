@@ -280,16 +280,21 @@ class UserController {
       param("userId", "User id is required").notEmpty().isUUID(),
     ]),
     async (req: Request, res: Response) => {
-      const userId = req?.user?.id;
+      const loggedInUser = req?.user?.id ?? "";
+      const userToMatchId = req?.params?.userId ?? "";
 
-      const data = await userService.getUserFollowers(
-        userId,
-        req.params.userId
-      );
+      const { users, pagination } = await userService.getUserFollowers({
+        loggedInUser,
+        userToMatchId,
+        limit: 100,
+        page: 0,
+        ...req.query,
+      });
 
       res.status(HttpStatusCode.Ok).json({
         success: true,
-        data,
+        data: users,
+        pagination,
         message: "User follower(s) fetched successfully",
       });
     },
@@ -300,41 +305,58 @@ class UserController {
       param("userId", "User id is required").notEmpty().isUUID(),
     ]),
     async (req: Request, res: Response) => {
-      const userId = req?.user?.id;
+      const loggedInUser = req?.user?.id ?? "";
+      const userToMatchId = req?.params?.userId ?? "";
 
-      const data = await userService.getUserFollowing(
-        userId,
-        req.params.userId
-      );
+      const { users, pagination } = await userService.getUserFollowing({
+        loggedInUser,
+        userToMatchId,
+        limit: 100,
+        page: 0,
+        ...req.query,
+      });
 
       res.status(HttpStatusCode.Ok).json({
         success: true,
-        data,
+        data: users,
+        pagination,
         message: "User following(s) fetched successfully",
       });
     },
   ];
 
   getMyFollowers = async (req: Request, res: Response) => {
-    const userId = req?.user?.id;
+    const currentUserId = req?.user?.id ?? "";
 
-    const data = await userService.getMyFollowers(userId);
+    const { users, pagination } = await userService.getMyFollowers({
+      currentUserId,
+      limit: 100,
+      page: 0,
+      ...req.query,
+    });
 
     res.status(HttpStatusCode.Ok).json({
       success: true,
-      data,
+      data: users,
+      pagination,
       message: "My follower(s) fetched successfully",
     });
   };
 
   getMyFollowing = async (req: Request, res: Response) => {
-    const userId = req?.user?.id;
+    const currentUserId = req?.user?.id ?? "";
 
-    const data = await userService.getMyFollowing(userId);
+    const { users, pagination } = await userService.getMyFollowing({
+      currentUserId,
+      limit: 100,
+      page: 0,
+      ...req.query,
+    });
 
     res.status(HttpStatusCode.Ok).json({
       success: true,
-      data,
+      data: users,
+      pagination,
       message: "My following(s) fetched successfully",
     });
   };

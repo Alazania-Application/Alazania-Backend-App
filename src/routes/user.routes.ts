@@ -23,11 +23,6 @@ userRouter.get(
   userController.getUsers
 );
 
-userRouter.get(
-  "/:id",
-  authMiddleWare.protectRoute,
-  userController.getUserProfile
-);
 
 userRouter.put(
   "/onboard/update",
@@ -97,4 +92,10 @@ userRouter.get(
   "/my-following",
   authMiddleWare.protectRoute,
   userController.getMyFollowing
+);
+
+userRouter.get(
+  "/:id",
+  authMiddleWare.protectRoute,
+  userController.getUserProfile
 );
