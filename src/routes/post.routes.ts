@@ -80,6 +80,18 @@ postRouter.post(
 
 // postRouter.post("/", authMiddleWare.protectRoute, multerConfig.array("images"), postController.createPost);
 
+postRouter.patch(
+  "/comment/like/:commentId",
+  authMiddleWare.protectRoute,
+  postController.likeAComment
+);
+
+postRouter.patch(
+  "/comment/unlike/:commentId",
+  authMiddleWare.protectRoute,
+  postController.unlikeAComment
+);
+
 postRouter.post(
   "/:postId/like",
   authMiddleWare.protectRoute,
@@ -99,16 +111,19 @@ postRouter.post(
 );
 
 postRouter.post(
+  "/:postId/comment/reply/:commentId",
+  authMiddleWare.protectRoute,
+  postController.replyToComment
+);
+
+
+postRouter.post(
   "/:postId/comment",
   authMiddleWare.protectRoute,
   postController.commentOnPost
 );
 
-postRouter.post(
-  "/comment/:commentId/reply",
-  authMiddleWare.protectRoute,
-  postController.replyToComment
-);
+
 
 postRouter.get(
   "/:id",

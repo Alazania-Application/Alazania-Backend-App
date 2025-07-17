@@ -414,18 +414,25 @@ class PostService extends BaseService {
   // Comments
   async commentOnPost(userId: string, postId: string, comment: string) {
     const createdAt = new Date().toISOString();
+    const hashtags = extractHashtags(comment) ?? [];
+    const mentions = extractMentions(comment) ?? [];
 
     await this.writeToDB(
       `
       MATCH (u:${NodeLabels.User} {id: $userId})
-      MATCH (p:${NodeLabels.Post} {id: $postId, isDeleted: false})
+      MATCH (p:${NodeLabels.Post} {id: $postId, isDeleted: false})<-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User})
+
+      OPTIONAL MATCH(u)-[blockedUser:${RelationshipTypes.BLOCKED}]->(creator)
+      OPTIONAL MATCH(u)<-[blockedByUser:${RelationshipTypes.BLOCKED}]-(creator)
+      WHERE blockedUser IS NULL AND blockedByUser IS NULL
       
       CREATE (c:${NodeLabels.Comment} {
         id: randomUUID(),
         comment: $comment,
         likes: 0,
         createdAt: datetime($createdAt),
-        updatedAt: datetime($createdAt)
+        updatedAt: datetime($createdAt),
+        isDeleted: false
       })
       
       MERGE (c)-[:${RelationshipTypes.COMMENTED_BY}]->(u)
@@ -434,10 +441,28 @@ class PostService extends BaseService {
       ON CREATE SET 
         comment.timestamp = datetime($createdAt),
         comment.isDeleted = false
-
       SET p.comments = coalesce(p.comments, 0) + 1
+
+      WITH p, u, c, COALESCE($mentions, []) AS mentions
+
+      CALL {
+          WITH p, u, c, mentions
+          // // Handle user mentions
+          UNWIND mentions AS mention
+          OPTIONAL MATCH(userMentioned:${NodeLabels.User} {username: mention})
+          OPTIONAL MATCH(userMentioned)-[blockedByUser:${RelationshipTypes.BLOCKED}]->(u)
+  
+          FOREACH (_ IN CASE WHEN userMentioned IS NOT NULL AND blockedByUser IS NULL THEN [1] ELSE [] END |
+              MERGE (c)-[r:${RelationshipTypes.MENTIONED}]->(userMentioned)
+              ON CREATE SET r.timestamp = datetime($createdAt)
+          )
+          
+          RETURN c AS user_comment, COLLECT(mention) AS user_mentions
+      }
+
+        RETURN user_comment{.*} AS comment
       `,
-      { userId, postId, comment, createdAt }
+      { userId, postId, comment, createdAt, hashtags, mentions }
     );
 
     return {
@@ -453,16 +478,24 @@ class PostService extends BaseService {
     comment: string
   ) {
     const createdAt = new Date().toISOString();
+    const hashtags = extractHashtags(comment) ?? [];
+    const mentions = extractMentions(comment) ?? [];
 
     return await this.writeToDB(
       `
         MATCH (u:${NodeLabels.User} {id: $userId})
-        MATCH (p:${NodeLabels.Post} {id: $postId, isDeleted: false})
-        MATCH (parent:${NodeLabels.Comment} {id: $parentCommentId, isDeleted: false})
+        MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(p:${NodeLabels.Post} {id: $postId, isDeleted: false})-[:${RelationshipTypes.HAS_COMMENT}]->(comment:${NodeLabels.Comment} {id: $parentCommentId, isDeleted: false})-[:${RelationshipTypes.COMMENTED_BY}]->(commenter:${NodeLabels.User})
+
+        OPTIONAL MATCH(u)-[blockedCreator:${RelationshipTypes.BLOCKED}]->(creator)
+        OPTIONAL MATCH(u)<-[blockedByCreator:${RelationshipTypes.BLOCKED}]-(creator)
+        OPTIONAL MATCH(u)-[blockedCommenter:${RelationshipTypes.BLOCKED}]->(commenter)
+        OPTIONAL MATCH(u)<-[blockedByCommenter:${RelationshipTypes.BLOCKED}]-(commenter)
+        WHERE blockedCreator IS NULL AND blockedByCreator IS NULL AND blockedCommenter IS NULL AND blockedByCommenter IS NULL
         
         CREATE (reply:${NodeLabels.Comment} {
           id: randomUUID(),
           comment: $comment,
+          likes: 0,
           createdAt: datetime($createdAt),
           updatedAt: datetime($createdAt),
           isDeleted: false
@@ -474,75 +507,145 @@ class PostService extends BaseService {
         MERGE (p)-[:${RelationshipTypes.HAS_COMMENT}]->(reply)
 
         SET p.comments = coalesce(p.comments, 0) + 1
-        RETURN reply.id AS commentId
+
+        WITH p, u, reply, COALESCE($mentions, []) AS mentions
+
+        CALL {
+            WITH p, reply, u, mentions
+            // // Handle user mentions
+            UNWIND mentions AS mention
+            OPTIONAL MATCH(userMentioned:${NodeLabels.User} {username: mention})
+            OPTIONAL MATCH(userMentioned)-[blockedByUser:${RelationshipTypes.BLOCKED}]->(u)
+    
+            FOREACH (_ IN CASE WHEN userMentioned IS NOT NULL AND blockedByUser IS NULL THEN [1] ELSE [] END |
+                MERGE (reply)-[r:${RelationshipTypes.MENTIONED}]->(userMentioned)
+                ON CREATE SET r.timestamp = datetime($createdAt)
+            )
+        }
+
+        RETURN c{.*} AS comment
       `,
-      { userId, postId, parentCommentId, comment, createdAt }
+      {
+        userId,
+        postId,
+        parentCommentId,
+        comment,
+        createdAt,
+        hashtags,
+        mentions,
+      }
     );
   }
 
   async likeAComment(userId: string, commentId: string) {
-    return await this.writeToDB(
+    const result = await this.writeToDB(
       `
         MATCH (u:${NodeLabels.User} {id: $userId})
-        MATCH (c:${NodeLabels.Comment} {id: $commentId, isDeleted: false})
-        MERGE (u)-[r:${RelationshipTypes.LIKED}]->(c)
-        ON CREATE SET r.timestamp = datetime($timestamp), c.likes = coalesce(c.likes, 0) + 1
+        MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(p:${NodeLabels.Post} {isDeleted: false})-[:${RelationshipTypes.HAS_COMMENT}]->(comment:${NodeLabels.Comment} {id: $commentId, isDeleted: false})-[:${RelationshipTypes.COMMENTED_BY}]->(commenter:${NodeLabels.User})
 
-        RETURN c.id AS commentId
+        OPTIONAL MATCH(u)-[blockedCreator:${RelationshipTypes.BLOCKED}]->(creator)
+        OPTIONAL MATCH(u)<-[blockedByCreator:${RelationshipTypes.BLOCKED}]-(creator)
+        OPTIONAL MATCH(u)-[blockedCommenter:${RelationshipTypes.BLOCKED}]->(commenter)
+        OPTIONAL MATCH(u)<-[blockedByCommenter:${RelationshipTypes.BLOCKED}]-(commenter)
+        WHERE blockedCreator IS NULL AND blockedByCreator IS NULL AND blockedCommenter IS NULL AND blockedByCommenter IS NULL
+
+
+        MERGE (u)-[r:${RelationshipTypes.LIKED}]->(comment)
+        ON CREATE SET r.timestamp = datetime($timestamp), comment.likes = coalesce(comment.likes, 0) + 1
+
+        RETURN comment
       `,
-      { userId, commentId }
+      { userId, commentId, timestamp: new Date().toISOString() }
     );
+
+    const comment = result.records[0]?.get("comment");
+
+    if (!comment) {
+      throw new ErrorResponse(
+        "There was an error liking this comment",
+        HttpStatusCode.BadRequest
+      );
+    }
+
+    return valueToNativeType(comment);
   }
 
   async unlikeAComment(userId: string, commentId: string) {
-    await this.writeToDB(
+    const result = await this.writeToDB(
       `
         MATCH (u:${NodeLabels.User} {id: $userId})-[r:${RelationshipTypes.LIKED}]->(c:${NodeLabels.Comment} {id: $commentId, isDeleted: false})
         DELETE r
         SET c.likes = CASE WHEN c.likes > 0 THEN c.likes - 1 ELSE 0 END
+
+        RETURN r, c AS comment
       `,
       {
         userId,
         commentId,
       }
     );
+
+    const comment = valueToNativeType(result.records[0]?.get("comment"));
+
+    if (!comment) {
+      throw new ErrorResponse(
+        "There was an error unliking this comment",
+        HttpStatusCode.BadRequest
+      );
+    }
+
+    return comment;
   }
 
   async deleteComment(userId: string, commentId: string) {
-    return await this.writeToDB(
+     await this.writeToDB(
       `
-      MATCH (u:${NodeLabels.User} {id: $userId})<-[:${RelationshipTypes.COMMENTED_BY}]-(c:${NodeLabels.Comment} {id: $commentId})
-      MATCH (p:${NodeLabels.Post})-[:${RelationshipTypes.HAS_COMMENT}]->(c)
-      SET c.isDeleted = true, p.comments = CASE WHEN p.comments > 0 THEN p.comments - 1 ELSE 0 END
+        MATCH (u:${NodeLabels.User} {id: $userId})<-[:${RelationshipTypes.COMMENTED_BY}]-(c:${NodeLabels.Comment} {id: $commentId, isDeleted: false})
+        MATCH (p:${NodeLabels.Post})-[:${RelationshipTypes.HAS_COMMENT}]->(c)
+        SET p.comments = CASE WHEN p.comments > 0 THEN p.comments - 1 ELSE 0 END
+        DETACH DELETE c
       `,
       { userId, commentId }
     );
   }
 
-  async getPostComments(postId: string) {
+  async getPostComments(
+    params: IReadQueryParams & { postId: string; userId: string }
+  ) {
     const results = await this.readFromDB(
       `
-        MATCH (p:${NodeLabels.Post} {id: $postId})-[:${RelationshipTypes.HAS_COMMENT}]->(c:${NodeLabels.Comment} {isDeleted: false})
-        OPTIONAL MATCH (c)-[:${RelationshipTypes.COMMENTED_BY}]->(u: ${NodeLabels.User})
-        RETURN c, u
-        ORDER BY c.createdAt ASC
+        MATCH (u:${NodeLabels.User} {id: $userId})
+        MATCH (post:${NodeLabels.Post} {id: $postId, isDeleted: false})-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User})
+       
+        OPTIONAL MATCH(u)-[blockedUser:${RelationshipTypes.BLOCKED}]->(creator)
+        OPTIONAL MATCH(u)<-[blockedByUser:${RelationshipTypes.BLOCKED}]-(creator)
+        WHERE blockedUser IS NULL AND blockedByUser IS NULL
+
+        OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_COMMENT}]->(c:${NodeLabels.Comment} {isDeleted: false})
+        OPTIONAL MATCH (c)-[:${RelationshipTypes.COMMENTED_BY}]->(commenter: ${NodeLabels.User})
+        RETURN c
+        {.*, 
+          commenter:{
+            userId: commenter.id,
+            username: commenter.username,
+            avatar: commenter.avatar
+          }
+        } 
+          AS comment
+
+        ORDER BY comment.createdAt DESC
       `,
-      {
-        postId,
-      }
+      params
     );
 
-    return results.records.map((record) => ({
-      comment: toNativeTypes(record.get("c").properties),
-      author: toNativeTypes(
-        toDTO(record.get("u")?.properties ?? null, [
-          "firstName",
-          "lastName",
-          "avatar",
-          "username",
-        ])
-      ),
-    }));
+    return results.records
+      .map((record) => {
+        if (Boolean(record)) {
+          const comment = valueToNativeType(record?.get("comment"));
+          return comment;
+        }
+      })
+      .filter((v) => Boolean(v));
   }
 
   async getHashtagPosts({
@@ -556,7 +659,7 @@ class PostService extends BaseService {
     const cypherQuery = `
       MATCH (u:${NodeLabels.User} {id: $userId})
       MATCH (hashtag:${NodeLabels.Hashtag} {slug: toLower($hashtag)})<-[${RelationshipTypes.HAS_HASHTAG}]-
-      (post:${NodeLabels.Post})<-[${RelationshipTypes.POSTED}]-
+      (post:${NodeLabels.Post} {isDeleted:false})<-[${RelationshipTypes.POSTED}]-
       (creator:${NodeLabels.User})
 
       OPTIONAL MATCH(post)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
@@ -641,7 +744,7 @@ class PostService extends BaseService {
   ) {
     const cypherQuery = `
       MATCH(u:${NodeLabels.User} {id: $userId})
-      MATCH (post:${NodeLabels.Post} {id:$postId})<-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User})
+      MATCH (post:${NodeLabels.Post} {id:$postId, isDeleted: false})<-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User})
       OPTIONAL MATCH(u)-[blockedUser:${RelationshipTypes.BLOCKED}]->(creator)
       OPTIONAL MATCH(u)<-[blockedByUser:${RelationshipTypes.BLOCKED}]-(creator)
 
@@ -694,8 +797,8 @@ class PostService extends BaseService {
     `;
 
     const result = await this.readFromDB(cypherQuery, params);
-    const post= this.extractPost(result.records[0])
-    return post
+    const post = this.extractPost(result.records[0]);
+    return post;
   }
 
   // Get posts
@@ -1113,7 +1216,7 @@ class PostService extends BaseService {
   ) => {
     const query = `
       MATCH (currentUser: ${NodeLabels.User} {id: $currentUserId})
-      MATCH (postToReport: ${NodeLabels.Post} {id: $postToReportId})
+      MATCH (postToReport: ${NodeLabels.Post} {id: $postToReportId, isDeleted:false})
 
       WHERE currentUser IS NOT NULL AND postToReport IS NOT NULL
 

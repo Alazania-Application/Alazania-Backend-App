@@ -444,9 +444,14 @@ class PostController {
       param("postId", "postId is required").notEmpty().isUUID(),
     ]),
     async (req: Request, res: Response) => {
-      const postId = req.params?.postId;
+      const userId = req?.user?.id ?? "";
+      const postId = req.params?.postId ?? "";
 
-      const data = await postService.getPostComments(postId);
+      const data = await postService.getPostComments({
+        userId,
+        postId,
+        ...req.query,
+      });
 
       res.status(HttpStatusCode.Ok).json({
         success: true,
@@ -479,20 +484,19 @@ class PostController {
   replyToComment = [
     ValidatorMiddleware.inputs([
       param("postId", "postId is required").notEmpty().isUUID(),
+      param("commentId", "commentId is required").notEmpty().isUUID(),
       body("comment", "Cannot post an empty comment").notEmpty().isString(),
-      body("parentCommentId", "parentCommentId is required")
-        .notEmpty()
-        .isUUID(),
     ]),
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
       const postId = req.params?.postId;
-      const { comment, parentCommentId } = req.body;
+      const commentId = req.params?.commentId;
+      const comment = req.body?.comment ?? "";
 
       const reply = await postService.replyToComment(
         userId,
         postId,
-        parentCommentId,
+        commentId,
         comment
       );
 
