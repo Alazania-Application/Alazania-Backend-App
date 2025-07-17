@@ -62,6 +62,9 @@ class SeedService extends BaseService {
       // === NEW: File Indexes ===
       ["file_id_index", `FOR (f:${NodeLabels.File}) ON (f.id)`],
       ["file_s3Key_index", `FOR (f:${NodeLabels.File}) ON (f.s3Key)`], // For efficient lookup by S3 key
+
+      // === NEW: Activity Indexes ===
+      ["activity_createdAt", `FOR (a:${NodeLabels.Activity}) ON (a.createdAt)`],
     ];
 
     await session

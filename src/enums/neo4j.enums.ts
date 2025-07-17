@@ -9,6 +9,7 @@ export enum NodeLabels {
   Comment = "Comment",
   OTP = "OTP",
   File = "File",
+  Activity = "Activity",
 }
 
 export enum RelationshipTypes {
@@ -24,7 +25,7 @@ export enum RelationshipTypes {
   ENGAGES_WITH = "ENGAGES_WITH", // User -> POST
   MENTIONED = "MENTIONED", // Post -> user
   TAGGED = "TAGGED", // Post -> user
-  
+
   // POST-RELATIONSHIPS
   INITIALIZED_POST_SESSION = "INITIALIZED_POST_SESSION", // User -> POST
   POSTED = "POSTED", // User -> POST
@@ -35,5 +36,17 @@ export enum RelationshipTypes {
   REPLIED_TO = "REPLIED_TO", // COMMENT -> COMMENT
   HAS_COMMENT = "HAS_COMMENT", // POST -> COMMENT
   HAS_FILE = "HAS_FILE", // POST -> FILE
-  
+
+  // USER
+  HAS_ACTIVITY = "HAS_ACTIVITY", // * -> USER
+}
+
+export enum ActivityTypes {
+  FOLLOW = "FOLLOW",
+  LIKE = "LIKE",
+  COMMENT = "COMMENT",
+  SHARE = "SHARE",
+  TAG = "TAG",
+  MENTIONED = "MENTIONED",
+  REPLY = "REPLY",
 }

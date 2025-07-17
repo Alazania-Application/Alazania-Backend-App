@@ -242,7 +242,7 @@ export const extractMentions = (text: string) => {
   return [
     ...new Set(
       (text.match(/@\w+/g) || []).map((tag) =>
-        String(tag)?.toLowerCase()?.trim()
+        String(tag).replace(/@/g, "")?.toLowerCase()?.trim()
       )
     ),
   ];
