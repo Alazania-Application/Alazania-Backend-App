@@ -1,19 +1,21 @@
 import { Router } from "express";
 import { authMiddleWare } from "@/middlewares/authenticator.middleware";
 import { postController } from "@/controllers";
-// import { multerConfig } from "@/middlewares/upload.middleware";
+import { postValidator } from "@/middlewares/validators";
 
 export const postRouter = Router();
 
 postRouter.post(
   "/generate-upload-url",
   authMiddleWare.protectRoute,
+  postValidator.validatePresignedUrl,
   postController.getPreSignedUrl
 );
 
 postRouter.post(
   "/publish",
   authMiddleWare.protectRoute,
+  postValidator.validatePostCreation,
   postController.publishPost
 );
 
@@ -26,6 +28,7 @@ postRouter.get(
 postRouter.get(
   "/user/:id",
   authMiddleWare.protectRoute,
+  postValidator.validateGetUserPosts,
   postController.getUserPosts
 );
 
@@ -38,9 +41,9 @@ postRouter.get(
 postRouter.get(
   "/hashtag",
   authMiddleWare.protectRoute,
+  postValidator.validateHashtag,
   postController.getPostsByHashtag
 );
-
 
 
 postRouter.get(
@@ -64,17 +67,28 @@ postRouter.get(
 postRouter.get(
   "/:postId/likes",
   authMiddleWare.protectRoute,
+  postValidator.validatePostId,
   postController.getPostLikes
 );
+
 postRouter.get(
   "/:postId/comments",
   authMiddleWare.protectRoute,
+  postValidator.validatePostId,
   postController.getPostComments
+);
+
+postRouter.get(
+  "/:postId/:commentId/replies",
+  authMiddleWare.protectRoute,
+  postValidator.validatePostAndCommentId,
+  postController.getPostCommentReplies
 );
 
 postRouter.post(
   "/report/:postId",
   authMiddleWare.protectRoute,
+  postValidator.validatePostId,
   postController.reportAPost
 );
 
@@ -83,24 +97,28 @@ postRouter.post(
 postRouter.patch(
   "/comment/like/:commentId",
   authMiddleWare.protectRoute,
+  postValidator.validateCommentId,
   postController.likeAComment
 );
 
 postRouter.patch(
   "/comment/unlike/:commentId",
   authMiddleWare.protectRoute,
+  postValidator.validateCommentId,
   postController.unlikeAComment
 );
 
 postRouter.post(
   "/:postId/like",
   authMiddleWare.protectRoute,
+  postValidator.validatePostId,
   postController.likeAPost
 );
 
 postRouter.post(
   "/:postId/unlike",
   authMiddleWare.protectRoute,
+  postValidator.validatePostId,
   postController.unlikeAPost
 );
 
@@ -113,6 +131,7 @@ postRouter.post(
 postRouter.post(
   "/:postId/comment/reply/:commentId",
   authMiddleWare.protectRoute,
+  postValidator.validateCommentReply,
   postController.replyToComment
 );
 
@@ -120,13 +139,14 @@ postRouter.post(
 postRouter.post(
   "/:postId/comment",
   authMiddleWare.protectRoute,
+  postValidator.validateComment,
   postController.commentOnPost
 );
-
 
 
 postRouter.get(
   "/:id",
   authMiddleWare.protectRoute,
+  postValidator.validatePostId,
   postController.getPostById
 );

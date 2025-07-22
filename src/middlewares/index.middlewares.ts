@@ -9,7 +9,7 @@ import { logRequestProcessingTime } from "./requestTimeLogger";
 import { errorHandler } from "./error.middleware";
 import indexRoutes from "../routes";
 import { HttpStatusCode } from "axios";
-import ValidatorMiddleware from "./validator.middleware";
+import ValidatorMiddleware from "./validators/validator.middleware";
 import swaggerUi from "swagger-ui-express";
 import swaggerDocument from "./../swagger-output.json";
 
@@ -39,7 +39,7 @@ export default (app: Application) => {
     app.use(helmet());
   }
 
-  app.use(ValidatorMiddleware.inputs(ValidatorMiddleware.paginationFilters()));
+  app.use(ValidatorMiddleware.paginationFilters());
 
   //Use app routes
   indexRoutes(app);
@@ -50,9 +50,13 @@ export default (app: Application) => {
     });
   });
 
-  app.use("/api/v1/docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
-    explorer: true,
-  }));
+  app.use(
+    "/api/v1/docs",
+    swaggerUi.serve,
+    swaggerUi.setup(swaggerDocument, {
+      explorer: true,
+    })
+  );
 
   //not found
   app.use("**", (_, res) => {

@@ -48,12 +48,15 @@ class SeedService extends BaseService {
 
     const indexes = [
       ["user_id_index", `FOR (u:${NodeLabels.User}) ON (u.id)`],
+      ["user_username_index", `FOR (u:${NodeLabels.User}) ON (u.username)`],
       ["post_createdAt_index", `FOR (p:${NodeLabels.Post}) ON (p.createdAt)`],
       ["post_id_index", `FOR (p:${NodeLabels.Post}) ON (p.id)`],
       ["post_isDeleted_index", `FOR (p:${NodeLabels.Post}) ON (p.isDeleted)`],
       ["comment_id_index", `FOR (c:${NodeLabels.Comment}) ON (c.id)`],
       ["comment_isDeleted_index", `FOR (c:${NodeLabels.Comment}) ON (c.isDeleted)`],
+      ["comment_isRoot_index", `FOR (c:${NodeLabels.Comment}) ON (c.isRoot)`],
       ["hashtag_slug_index", `FOR (h:${NodeLabels.Hashtag}) ON (h.slug)`],
+      ["topic_slug_index", `FOR (t:${NodeLabels.Topic}) ON (t.slug)`],
 
       // === NEW: PostSession Indexes ===
       ["post_session_id_index", `FOR (s:${NodeLabels.PostSession}) ON (s.id)`], // For efficient lookup

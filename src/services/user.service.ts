@@ -7,7 +7,7 @@ import {
 } from "@/utils";
 import BaseService from "./base.service";
 import { IUser, UserResponseDto } from "@/models";
-import { NodeLabels, RelationshipTypes } from "@/enums";
+import { ActivityTypes, NodeLabels, RelationshipTypes } from "@/enums";
 
 class UserService extends BaseService {
   withDTO = (doc: IUser, otherFields: string[] = []) => {
@@ -188,9 +188,9 @@ class UserService extends BaseService {
 
     const result = await this.writeToDB(
       `
-      MERGE (u:${NodeLabels.User} {id: $id})
-      SET u += $updates
-      RETURN u
+        MERGE (u:${NodeLabels.User} {id: $id})
+        SET u += $updates
+        RETURN u
       `,
       { id, updates }
     );
@@ -221,7 +221,11 @@ class UserService extends BaseService {
         OPTIONAL MATCH (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(other)
  
    
-        RETURN other, isFollowing, isFollowingBack
+        RETURN other{.*,
+          isFollowingBack: (isFollowingBack IS NOT NUll), 
+          isFollowing: (isFollowing IS NOT NUll),
+        } AS other
+
         LIMIT $limit
       `;
 
@@ -229,8 +233,6 @@ class UserService extends BaseService {
 
     const users = result.records.map((v) => ({
       ...this.withPublicDTO(v.get("other").properties),
-      isFollowingBack: Boolean(v.get("isFollowingBack")?.properties),
-      isFollowing: Boolean(v.get("isFollowing")?.properties),
     })) as IUser[];
 
     return users;
@@ -266,7 +268,15 @@ class UserService extends BaseService {
         AND NOT EXISTS {
           MATCH (currentUser)-[:${RelationshipTypes.FOLLOWS}]->(other)
         }
-        RETURN other
+
+        OPTIONAL MATCH (other)-[isFollowingBack:${RelationshipTypes.FOLLOWS}]->(currentUser)
+        OPTIONAL MATCH (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(other)
+
+        RETURN other{ .*,
+          isFollowingBack: (isFollowingBack IS NOT NUll), 
+          isFollowing: (isFollowing IS NOT NUll),
+        } AS other
+
         LIMIT $limit
       `;
 
@@ -436,7 +446,23 @@ class UserService extends BaseService {
         userToFollow.followers = coalesce(userToFollow.followers, 0) + 1,
         currentUser.following = coalesce(currentUser.following, 0) + 1
 
-      RETURN userToFollow, isFollowingBack, isFollowing
+      CREATE (activity:${NodeLabels.Activity} {
+          id: randomUUID(), 
+          type: "${ActivityTypes.FOLLOW}",
+          actorId: $currentUserId,
+          targetId: $userToFollowId,
+          createdAt: datetime($timestamp)
+      })
+
+      CREATE (userToFollow)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
+      WITH userToFollow, isFollowing, isFollowingBack, activity
+        CALL apoc.ttl.expireIn(activity, 10, 'w') // 10 weeks from now
+
+      RETURN userToFollow{
+          .*,
+          isFollowing: (isFollowing IS NOT NULl),
+          isFollowingBack: (isFollowingBack IS NOT NULl),
+        } AS userToFollow
     `;
 
     const result = await this.writeToDB(query, {
@@ -446,9 +472,7 @@ class UserService extends BaseService {
     });
 
     const doc = result.records.map((v) => ({
-      ...this.withPublicDTO(v.get("userToFollow").properties),
-      isFollowingBack: Boolean(v.get("isFollowingBack")?.properties),
-      isFollowing: Boolean(v.get("isFollowing")?.properties),
+      ...this.withPublicDTO(v.get("userToFollow").properties)
     }))[0] as IUser;
 
     const user = this.withDTO(doc) as IUser;
@@ -475,7 +499,10 @@ class UserService extends BaseService {
       SET userToUnfollow.followers = CASE WHEN userToUnfollow.followers > 0 THEN userToUnfollow.followers - 1 ELSE 0 END,
           currentUser.following = CASE WHEN currentUser.following > 0 THEN currentUser.following - 1 ELSE 0 END
 
-      RETURN userToUnfollow, isFollowingBack, isFollowing
+      RETURN userToUnfollow{ .*,
+        isFollowingBack: (isFollowingBack IS NOT NUll), 
+        isFollowing: (isFollowing IS NOT NUll),
+      } AS userToUnfollow
     `;
 
     const result = await this.writeToDB(query, {
@@ -486,8 +513,6 @@ class UserService extends BaseService {
 
     const doc = result.records.map((v) => ({
       ...this.withPublicDTO(v.get("userToUnfollow").properties),
-      isFollowingBack: Boolean(v.get("isFollowingBack")?.properties),
-      isFollowing: Boolean(v.get("isFollowing")?.properties),
     }))[0] as IUser;
 
     const user = this.withDTO(doc) as IUser;
@@ -546,7 +571,6 @@ class UserService extends BaseService {
       OPTIONAL MATCH (currentUser)<-[blockedByUser:${RelationshipTypes.BLOCKED}]-(userToMatch)
       WHERE userToMatch IS NOT NULL AND blockedByUser IS NULL
       
-
       MATCH (userToMatch)<-[:${RelationshipTypes.FOLLOWS}]-(user: ${NodeLabels.User})
 
       OPTIONAL MATCH (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(user)
@@ -588,7 +612,7 @@ class UserService extends BaseService {
 
       WITH user, currentUser, isFollowing, isFollowingBack, COUNT(post) AS totalPosts
       
-      RETURN user{ .*,
+      RETURN user{.*,
         isFollowingBack: (isFollowingBack IS NOT NUll), 
         isFollowing: (isFollowing IS NOT NUll),
         totalPosts
@@ -621,7 +645,7 @@ class UserService extends BaseService {
 
       WITH user, currentUser, isFollowing, isFollowingBack, COUNT(post) AS totalPosts
       
-      RETURN user{ .*,
+      RETURN user{.*,
         isFollowingBack: (isFollowingBack IS NOT NUll), 
         isFollowing: (isFollowing IS NOT NUll),
         totalPosts

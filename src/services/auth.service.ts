@@ -20,6 +20,7 @@ import { otpService } from "./otp.service";
 import { userService } from "./user.service";
 import { OAuth2Client } from "google-auth-library";
 import { NodeLabels } from "@/enums";
+import { timeStamp } from "console";
 
 /**
  * Description placeholder
@@ -417,11 +418,11 @@ class AuthService extends BaseService {
         MERGE (u:${NodeLabels.User} {email: $email})
         ON CREATE SET 
           u.id = randomuuid(),
-          u.username = $username,
+          // u.username = $username,
           u.createdAt = datetime($timestamp),
           u += $updates,
           u.following = 0,
-          u.followers = 0,
+          u.followers = 0
 
         ON MATCH SET  
           u.id = CASE WHEN u.id IS NULL THEN randomuuid() ELSE u.id END,
@@ -429,12 +430,13 @@ class AuthService extends BaseService {
 
         RETURN u
       `,
-      { email: payload?.email, username, updates }
+      { email: payload?.email, username, updates, timestamp: new Date().toISOString() }
     );
 
   
 
     const doc = result.records[0]?.get("u").properties as IUser;
+    console.log({ doc, record:  result.records[0]?.get("u") });
 
     return userService.withDTO(doc) as IUser;
   };
