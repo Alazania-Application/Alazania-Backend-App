@@ -3,7 +3,6 @@ import {
   deleteFolderByPrefix,
   s3Config,
 } from "@/middlewares/upload.middleware";
-import ValidatorMiddleware from "@/middlewares/validator.middleware";
 import { IPostFile } from "@/models";
 import { postService } from "@/services";
 import { ErrorResponse } from "@/utils";
@@ -11,93 +10,11 @@ import { CopyObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { HttpStatusCode } from "axios";
 import { Request, Response } from "express";
-import { body, param, query } from "express-validator";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
 
 class PostController {
-  // createPost = async (req: Request, res: Response) => {
-  //   const userId = req?.user?.id;
-  //   const postId = uuidv4();
-  //   req.body.postId = postId;
-
-  //   const images = req.files as Express.Multer.File[];
-
-  //   if (images?.length) {
-  //     const compressedImages = await Promise.all(
-  //       images.map((file) =>
-  //         sharp(file.buffer)
-  //           .resize({ width: 1080 })
-  //           .webp({ quality: 80 })
-  //           .toBuffer()
-  //       )
-  //     );
-
-  //     const uploadUrls = await Promise.all(
-  //       compressedImages.map((compressed) => {
-  //         const filename = `${userId}/posts/${postId}/${uuidv4()}.webp`;
-  //         return uploadFile(compressed, filename);
-  //       })
-  //     );
-
-  //     req.body.images = [...uploadUrls];
-  //   }
-
-  //   const payload = {
-  //     ...req.body,
-  //     userId,
-  //   };
-
-  //   const newPost = await postService.createPost(payload);
-
-  //   res.status(HttpStatusCode.Created).json({
-  //     success: true,
-  //     data: newPost,
-  //     message: "Post created successfully",
-  //   });
-  // };
-
   publishPost = [
-    ValidatorMiddleware.inputs([
-      body("files", "files must be an array").optional().isArray(),
-      body("files.*.url", "url is required and must be a string")
-        .if(body("files").notEmpty())
-        .notEmpty()
-        .isString(),
-      body("files.*.key", "key is required and must be a string")
-        .if(body("files").notEmpty())
-        .notEmpty()
-        .isString(),
-      body("files.*.fileType", "fileType is required and must be a string")
-        .if(body("files").notEmpty())
-        .notEmpty()
-        .isString(),
-      body("files.*.tags", "tags is must be an array")
-        .if(body("files").notEmpty())
-        .optional()
-        .isArray(),
-      body("files.*.tags.*.userId", "User id is required for tags")
-        .if(body("files.*.tags").notEmpty())
-        .notEmpty()
-        .isUUID()
-        .withMessage("Invalid User id"),
-      body("files.*.tags.*.positionX", "positionX should be a number")
-        .if(body("files.*.tags").notEmpty())
-        .optional()
-        .isNumeric(),
-      body("files.*.tags.*.positionY", "positionY should be a number")
-        .if(body("files.*.tags").notEmpty())
-        .optional()
-        .isNumeric(),
-      body("sessionId", "sessionId is required").notEmpty(),
-      body("caption", "caption is required")
-        .notEmpty()
-        .isString()
-        .isLength({ max: 2200, min: 1 })
-        .withMessage(
-          "caption is required and must be a non-empty string between 1 and 2200 characters."
-        ),
-    ]),
     async (req: Request, res: Response) => {
       const userId = req.user?.id;
       const { sessionId, caption } = req.body;
@@ -161,69 +78,59 @@ class PostController {
     },
   ];
 
-  getPreSignedUrl = [
-    ValidatorMiddleware.inputs([
-      body("fileName", "fileName string is required").isString(),
-      body("sessionId", "sessionId is required").notEmpty().isString(),
-      body("fileType", "fileType is required").notEmpty().isString(),
-    ]),
+  getPreSignedUrl = async (req: Request, res: Response) => {
+    const userId = req?.user?.id;
+    const { fileName, fileType, sessionId } = req.body;
 
-    async (req: Request, res: Response) => {
-      const userId = req?.user?.id;
-      const { fileName, fileType, sessionId } = req.body;
+    if (!fileName || !fileType || !userId || !sessionId) {
+      throw new ErrorResponse(
+        "fileName, fileType, sessionId, and userId are required.",
+        HttpStatusCode.BadRequest
+      );
+    }
 
-      if (!fileName || !fileType || !userId || !sessionId) {
-        throw new ErrorResponse(
-          "fileName, fileType, sessionId, and userId are required.",
-          HttpStatusCode.BadRequest
-        );
-      }
+    // Generate a unique filename to prevent collisions and duplicates in the S3 bucket
+    const fileExtension = path.extname(fileName);
+    const uniqueFileName = `${uuidv4()}${fileExtension}`;
+    const tempS3Key = `${userId}/temp-uploads/${sessionId}/${uniqueFileName}`;
 
-      // Generate a unique filename to prevent collisions and duplicates in the S3 bucket
-      const fileExtension = path.extname(fileName);
-      const uniqueFileName = `${uuidv4()}${fileExtension}`;
-      const tempS3Key = `${userId}/temp-uploads/${sessionId}/${uniqueFileName}`;
+    const command = new PutObjectCommand({
+      Bucket: SPACES_BUCKET,
+      Key: tempS3Key,
+      ContentType: fileType,
+      // You can add metadata here to be stored with the object in S3
+      Metadata: {
+        "x-amz-meta-original-name": fileName,
+        "x-amz-meta-user-id": userId,
+        "x-amz-meta-session-id": sessionId,
+      },
+    });
 
-      const command = new PutObjectCommand({
-        Bucket: SPACES_BUCKET,
-        Key: tempS3Key,
-        ContentType: fileType,
-        // You can add metadata here to be stored with the object in S3
-        Metadata: {
-          "x-amz-meta-original-name": fileName,
-          "x-amz-meta-user-id": userId,
-          "x-amz-meta-session-id": sessionId,
-        },
-      });
+    // Generate the presigned URL with a limited expiration time (e.g., 60 minutes)
+    const expiresIn = 60 * 60; // 60 minutes
+    const presignedUrl = await getSignedUrl(s3Config, command, { expiresIn });
 
-      // Generate the presigned URL with a limited expiration time (e.g., 60 minutes)
-      const expiresIn = 60 * 60; // 60 minutes
-      const presignedUrl = await getSignedUrl(s3Config, command, { expiresIn });
+    res.status(200).json({
+      message: "Post session initialized successfully!",
+      data: {
+        url: presignedUrl,
+        key: tempS3Key,
+      },
+    });
+  };
 
-      res.status(200).json({
-        message: "Post session initialized successfully!",
-        data: {
-          url: presignedUrl,
-          key: tempS3Key,
-        },
-      });
-    },
-  ];
+  initializePostSession = async (req: Request, res: Response) => {
+    const userId = req?.user?.id;
 
-  initializePostSession = [
-    async (req: Request, res: Response) => {
-      const userId = req?.user?.id;
+    const data = await postService.initializePostSession(userId);
 
-      const data = await postService.initializePostSession(userId);
-
-      res.status(201).json({
-        message: "Post session initialized successfully!",
-        data: {
-          sessionId: data?.sessionId,
-        },
-      });
-    },
-  ];
+    res.status(201).json({
+      message: "Post session initialized successfully!",
+      data: {
+        sessionId: data?.sessionId,
+      },
+    });
+  };
 
   getMyPosts = async (req: Request, res: Response) => {
     const userId = req?.user?.id;
@@ -241,79 +148,57 @@ class PostController {
     });
   };
 
-  getUserPosts = [
-    ValidatorMiddleware.inputs([
-      param("id", "user ID is required")
-        .notEmpty()
-        .isUUID()
-        .withMessage("Invalid user ID"),
-    ]),
-    async (req: Request, res: Response) => {
-      const loggedInUser = req?.user?.id;
-      const userId = req?.params?.id;
+  getUserPosts = async (req: Request, res: Response) => {
+    const loggedInUser = req?.user?.id;
+    const userId = req?.params?.id;
 
-      const { posts: data, pagination } = await postService.getUserPosts(
-        loggedInUser,
-        userId,
-        req.query
-      );
+    const { posts: data, pagination } = await postService.getUserPosts(
+      loggedInUser,
+      userId,
+      req.query
+    );
 
-      res.status(HttpStatusCode.Ok).json({
-        success: true,
-        data,
-        pagination,
-        message: "Posts fetched successfully",
-      });
-    },
-  ];
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      data,
+      pagination,
+      message: "Posts fetched successfully",
+    });
+  };
 
-  getPostById = [
-    ValidatorMiddleware.inputs([
-      param("id", "Post ID is required")
-        .notEmpty()
-        .isUUID()
-        .withMessage("Invalid post ID"),
-    ]),
-    async (req: Request, res: Response) => {
-      const userId = req?.user?.id ?? "";
-      const postId = req?.params?.id ?? "";
+  getPostById = async (req: Request, res: Response) => {
+    const userId = req?.user?.id ?? "";
+    const postId = req?.params?.id ?? "";
 
-      const post = await postService.getPostById({
-        userId,
-        postId,
-      });
+    const post = await postService.getPostById({
+      userId,
+      postId,
+    });
 
-      res.status(HttpStatusCode.Ok).json({
-        success: true,
-        data: post,
-        message: "Post fetched successfully",
-      });
-    },
-  ];
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      data: post,
+      message: "Post fetched successfully",
+    });
+  };
 
-  getPostsByHashtag = [
-    ValidatorMiddleware.inputs([
-      query("hashtag", "hashtag is required").notEmpty().isString(),
-    ]),
+  getPostsByHashtag = async (req: Request, res: Response) => {
+    const userId = req?.user?.id;
+    const hashtag = String(req.query?.hashtag ?? "").replace(/#/g, "");
 
-    async (req: Request, res: Response) => {
-      const userId = req?.user?.id;
-      const hashtag = String(req.query?.hashtag ?? "").replace(/#/g, "");
+    const { posts: data, pagination } = await postService.getHashtagPosts({
+      userId,
+      hashtag,
+      ...req.query,
+    });
 
-      const { posts: data, pagination } = await postService.getHashtagPosts({
-        userId,
-        hashtag,
-        ...req.query,
-      });
-
-      res.status(HttpStatusCode.Ok).json({
-        success: true,
-        data,
-        pagination,
-        message: `Hashtag:(${hashtag}) Posts fetched successfully`,
-      });
-    },
-  ];
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      data,
+      pagination,
+      message: `Hashtag:(${hashtag}) Posts fetched successfully`,
+    });
+  };
 
   getFollowingPosts = async (req: Request, res: Response) => {
     const userId = req?.user?.id;
@@ -350,81 +235,61 @@ class PostController {
   };
 
   // REPORT
-  reportAPost = [
-    ValidatorMiddleware.inputs([
-      param("postId", "A valid postId is required").notEmpty().isUUID(),
-    ]),
-    async (req: Request, res: Response) => {
-      const userId = req?.user?.id;
-      const postId = req.params?.postId;
+  reportAPost = async (req: Request, res: Response) => {
+    const userId = req?.user?.id;
+    const postId = req.params?.postId;
 
-      const data = await postService.reportPost(
-        userId,
-        postId,
-        req.body?.reason ?? ""
-      );
+    const data = await postService.reportPost(
+      userId,
+      postId,
+      req.body?.reason ?? ""
+    );
 
-      res.status(HttpStatusCode.Ok).json({
-        success: true,
-        data,
-        message: "Post reported successfully",
-      });
-    },
-  ];
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      data,
+      message: "Post reported successfully",
+    });
+  };
 
   // LIKES
-  likeAPost = [
-    ValidatorMiddleware.inputs([
-      param("postId", "postId is required").notEmpty().isUUID(),
-    ]),
-    async (req: Request, res: Response) => {
-      const userId = req?.user?.id;
-      const postId = req.params?.postId;
+  likeAPost = async (req: Request, res: Response) => {
+    const userId = req?.user?.id;
+    const postId = req.params?.postId;
 
-      const data = await postService.likePost(userId, postId);
+    const data = await postService.likePost(userId, postId);
 
-      res.status(HttpStatusCode.Ok).json({
-        success: true,
-        data,
-        message: "Post liked successfully",
-      });
-    },
-  ];
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      data,
+      message: "Post liked successfully",
+    });
+  };
 
-  unlikeAPost = [
-    ValidatorMiddleware.inputs([
-      param("postId", "postId is required").notEmpty().isUUID(),
-    ]),
-    async (req: Request, res: Response) => {
-      const userId = req?.user?.id;
-      const postId = req.params?.postId;
+  unlikeAPost = async (req: Request, res: Response) => {
+    const userId = req?.user?.id;
+    const postId = req.params?.postId;
 
-      const data = await postService.unlikePost(userId, postId);
+    const data = await postService.unlikePost(userId, postId);
 
-      res.status(HttpStatusCode.Ok).json({
-        success: true,
-        data,
-        message: "Post unliked successfully",
-      });
-    },
-  ];
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      data,
+      message: "Post unliked successfully",
+    });
+  };
 
-  getPostLikes = [
-    ValidatorMiddleware.inputs([
-      param("postId", "postId is required").notEmpty().isUUID(),
-    ]),
-    async (req: Request, res: Response) => {
-      const postId = req.params?.postId;
+  getPostLikes = async (req: Request, res: Response) => {
+    const postId = req.params?.postId;
 
-      const data = await postService.getPostLikes(postId);
+    const data = await postService.getPostLikes(postId);
 
-      res.status(HttpStatusCode.Ok).json({
-        success: true,
-        data,
-        message: "Likes fetched successfully",
-      });
-    },
-  ];
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      data,
+      message: "Likes fetched successfully",
+    });
+  };
 
   sharePost = async (req: Request, res: Response) => {
     const userId = req?.user?.id;
@@ -439,111 +304,101 @@ class PostController {
   };
 
   // COMMENTS
-  getPostComments = [
-    ValidatorMiddleware.inputs([
-      param("postId", "postId is required").notEmpty().isUUID(),
-    ]),
-    async (req: Request, res: Response) => {
-      const userId = req?.user?.id ?? "";
-      const postId = req.params?.postId ?? "";
+  getPostComments = async (req: Request, res: Response) => {
+    const userId = req?.user?.id ?? "";
+    const postId = req.params?.postId ?? "";
 
-      const data = await postService.getPostComments({
-        userId,
-        postId,
-        ...req.query,
-      });
+    const data = await postService.getPostComments({
+      userId,
+      postId,
+      ...req.query,
+    });
 
-      res.status(HttpStatusCode.Ok).json({
-        success: true,
-        data,
-        message: "Comments fetched successfully",
-      });
-    },
-  ];
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      data,
+      message: "Comments fetched successfully",
+    });
+  };
 
-  commentOnPost = [
-    ValidatorMiddleware.inputs([
-      param("postId", "postId is required").notEmpty().isUUID(),
-      body("comment", "Cannot post an empty comment").notEmpty().isString(),
-    ]),
-    async (req: Request, res: Response) => {
-      const userId = req?.user?.id;
-      const postId = req.params?.postId;
-      const { comment: message } = req.body;
+  getPostCommentReplies = async (req: Request, res: Response) => {
+    const userId = req?.user?.id ?? "";
+    const postId = req.params?.postId ?? "";
+    const commentId = req.params?.commentId ?? "";
 
-      const comment = await postService.commentOnPost(userId, postId, message);
+    const data = await postService.getPostCommentReplies({
+      userId,
+      postId,
+      commentId,
+      ...req.query,
+    });
 
-      res.status(HttpStatusCode.Created).json({
-        success: true,
-        data: comment,
-        message: "Comment added successfully",
-      });
-    },
-  ];
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      data,
+      message: "Comments replies fetched successfully",
+    });
+  };
 
-  replyToComment = [
-    ValidatorMiddleware.inputs([
-      param("postId", "postId is required").notEmpty().isUUID(),
-      param("commentId", "commentId is required").notEmpty().isUUID(),
-      body("comment", "Cannot post an empty comment").notEmpty().isString(),
-    ]),
-    async (req: Request, res: Response) => {
-      const userId = req?.user?.id;
-      const postId = req.params?.postId;
-      const commentId = req.params?.commentId;
-      const comment = req.body?.comment ?? "";
+  commentOnPost = async (req: Request, res: Response) => {
+    const userId = req?.user?.id;
+    const postId = req.params?.postId;
+    const { comment: message } = req.body;
 
-      const reply = await postService.replyToComment(
-        userId,
-        postId,
-        commentId,
-        comment
-      );
+    const comment = await postService.commentOnPost(userId, postId, message);
 
-      res.status(HttpStatusCode.Created).json({
-        success: true,
-        data: reply,
-        message: "Reply added successfully",
-      });
-    },
-  ];
+    res.status(HttpStatusCode.Created).json({
+      success: true,
+      data: comment,
+      message: "Comment added successfully",
+    });
+  };
 
-  likeAComment = [
-    ValidatorMiddleware.inputs([
-      param("commentId", "commentId is required").notEmpty().isUUID(),
-    ]),
+  replyToComment = async (req: Request, res: Response) => {
+    const userId = req?.user?.id;
+    const postId = req.params?.postId;
+    const commentId = req.params?.commentId;
+    const comment = req.body?.comment ?? "";
 
-    async (req: Request, res: Response) => {
-      const userId = req?.user?.id;
-      const commentId = req.params?.commentId;
+    const reply = await postService.replyToComment(
+      userId,
+      postId,
+      commentId,
+      comment
+    );
 
-      const reply = await postService.likeAComment(userId, commentId);
+    res.status(HttpStatusCode.Created).json({
+      success: true,
+      data: reply,
+      message: "Reply added successfully",
+    });
+  };
 
-      res.status(HttpStatusCode.Created).json({
-        success: true,
-        data: reply,
-        message: "Comment liked successfully",
-      });
-    },
-  ];
+  likeAComment = async (req: Request, res: Response) => {
+    const userId = req?.user?.id;
+    const commentId = req.params?.commentId;
 
-  unlikeAComment = [
-    ValidatorMiddleware.inputs([
-      param("commentId", "commentId is required").notEmpty().isUUID(),
-    ]),
-    async (req: Request, res: Response) => {
-      const userId = req?.user?.id;
-      const commentId = req.params?.commentId;
+    const reply = await postService.likeAComment(userId, commentId);
 
-      const reply = await postService.unlikeAComment(userId, commentId);
+    res.status(HttpStatusCode.Created).json({
+      success: true,
+      data: reply,
+      message: "Comment liked successfully",
+    });
+  };
 
-      res.status(HttpStatusCode.Created).json({
-        success: true,
-        data: reply,
-        message: "Comment unliked successfully",
-      });
-    },
-  ];
+  unlikeAComment = async (req: Request, res: Response) => {
+    const userId = req?.user?.id;
+    const commentId = req.params?.commentId;
+
+    const reply = await postService.unlikeAComment(userId, commentId);
+
+    res.status(HttpStatusCode.Created).json({
+      success: true,
+      data: reply,
+      message: "Comment unliked successfully",
+    });
+  };
 }
 
 export const postController = new PostController();

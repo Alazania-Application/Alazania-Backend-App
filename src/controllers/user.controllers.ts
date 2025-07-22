@@ -1,6 +1,5 @@
 import { UserResponseDto } from "@/models";
 import { uploadFile } from "@/middlewares/upload.middleware";
-import ValidatorMiddleware from "@/middlewares/validator.middleware";
 import {
   hashtagService,
   postService,
@@ -9,7 +8,6 @@ import {
 } from "@/services";
 import { HttpStatusCode } from "axios";
 import { NextFunction, Request, Response } from "express";
-import { body, param } from "express-validator";
 import slugify from "slugify";
 
 class UserController {
@@ -31,114 +29,81 @@ class UserController {
   /**
    * Handle avatar upload
    */
-  handleAvatarUpload = [
-    ValidatorMiddleware.dynamicFieldValidator,
-    async (req: Request, res: Response, next: NextFunction) => {
-      const user = req?.user;
-      const avatar = req.file as Express.Multer.File;
+  handleAvatarUpload = async (
+    req: Request,
+    _: Response,
+    next: NextFunction
+  ) => {
+    const user = req?.user;
+    const avatar = req.file as Express.Multer.File;
 
-      if (avatar) {
-        const fileBuffer = avatar.buffer;
+    if (avatar) {
+      const fileBuffer = avatar.buffer;
 
-        const fileName = `${user?.id}/avatar`;
+      const fileName = `${user?.id}/avatar`;
 
-        const fileUrl = await uploadFile(fileBuffer, fileName);
+      const fileUrl = await uploadFile(fileBuffer, fileName);
 
-        req.body.avatar = fileUrl;
-      }
-      next();
-    },
-  ];
+      req.body.avatar = fileUrl;
+    }
+    next();
+  };
 
-  update = [
-    ValidatorMiddleware.dynamicFieldValidator,
-    ValidatorMiddleware.inputs([
-      body(
-        "username",
-        "Username must be 3-20 characters, alphanumeric, start with a letter, and may contain _-."
-      )
-        .optional()
-        .isString()
-        .isLength({ min: 3, max: 20 })
-        .matches(/^[A-Za-z][A-Za-z0-9_\-\.]*$/),
-      body("bio", "bio must be between 0-125 characters")
-        .optional()
-        .isString()
-        .isLength({ min: 0, max: 125 }),
-    ]),
-    async (req: Request, res: Response) => {
-      const updates = { ...req.body };
-      if ("lastLogin" in updates) {
-        delete updates["lastLogin"];
-      }
-      const user = await userService.updateUser(req?.user?.id, updates);
+  update = async (req: Request, res: Response) => {
+    const updates = { ...req.body };
+    if ("lastLogin" in updates) {
+      delete updates["lastLogin"];
+    }
+    const user = await userService.updateUser(req?.user?.id, updates);
 
-      res.status(HttpStatusCode.Ok).json({
-        success: true,
-        data: user,
-        message: "User updated successfully",
-      });
-    },
-  ];
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      data: user,
+      message: "User updated successfully",
+    });
+  };
 
-  onboardUpdate = [
-    ValidatorMiddleware.dynamicFieldValidator,
-    ValidatorMiddleware.inputs([
-      body(
-        "username",
-        "Username must be 3-20 characters, alphanumeric, start with a letter, and may contain _-."
-      )
-        .optional()
-        .isString()
-        .isLength({ min: 3, max: 20 })
-        .matches(/^[A-Za-z][A-Za-z0-9_\-\.]*$/),
-      body("topics", "Please provide topics").optional().isArray(),
-      body("topics.*", "Each topic must be a string").notEmpty().isString(),
-      body("hashtags", "Please provide hashtags").optional().isArray(),
-      body("hashtags.*", "Each hashtag must be a string").notEmpty().isString(),
-    ]),
-    async (req: Request, res: Response) => {
-      const userId = req?.user?.id;
-      const topics = req.body?.topics;
-      const hashtags = req.body?.hashtags;
-      const promises = [];
+  onboardUpdate = async (req: Request, res: Response) => {
+    const userId = req?.user?.id;
+    const topics = req.body?.topics;
+    const hashtags = req.body?.hashtags;
+    const promises = [];
 
-      if (topics?.length) {
-        const topicsArray = (
-          Array.isArray(topics) ? topics : topics?.split(",")
-        ).map((v: string) =>
-          slugify(v, {
-            trim: true,
-            lower: true,
-          })
-        );
-        promises.push(topicService.addUserInterests(userId, topicsArray));
-      }
+    if (topics?.length) {
+      const topicsArray = (
+        Array.isArray(topics) ? topics : topics?.split(",")
+      ).map((v: string) =>
+        slugify(v, {
+          trim: true,
+          lower: true,
+        })
+      );
+      promises.push(topicService.addUserInterests(userId, topicsArray));
+    }
 
-      if (hashtags?.length) {
-        const hashtagArray = (
-          Array.isArray(hashtags) ? hashtags : hashtags?.split(",")
-        ).map((v: string) =>
-          slugify(v, {
-            trim: true,
-            lower: true,
-          })
-        );
-        promises.push(hashtagService.followHashtags(userId, hashtagArray));
-      }
+    if (hashtags?.length) {
+      const hashtagArray = (
+        Array.isArray(hashtags) ? hashtags : hashtags?.split(",")
+      ).map((v: string) =>
+        slugify(v, {
+          trim: true,
+          lower: true,
+        })
+      );
+      promises.push(hashtagService.followHashtags(userId, hashtagArray));
+    }
 
-      if (Object.values(req.body).length) {
-        promises.push(userService.updateOnboardUser(userId, req.body));
-      }
+    if (Object.values(req.body).length) {
+      promises.push(userService.updateOnboardUser(userId, req.body));
+    }
 
-      await Promise.all(promises);
+    await Promise.all(promises);
 
-      res.status(HttpStatusCode.Ok).json({
-        success: true,
-        message: "Profile updated successfully",
-      });
-    },
-  ];
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      message: "Profile updated successfully",
+    });
+  };
 
   getUsers = [
     async (req: Request, res: Response) => {
@@ -154,23 +119,18 @@ class UserController {
     },
   ];
 
-  getUserProfile = [
-    ValidatorMiddleware.inputs([
-      param("id", "A valid user id is required").notEmpty().isUUID(),
-    ]),
-    async (req: Request, res: Response) => {
-      const currentUser = req?.user?.id;
-      const userId = req?.params?.id;
+  getUserProfile = async (req: Request, res: Response) => {
+    const currentUser = req?.user?.id;
+    const userId = req?.params?.id;
 
-      const user = await userService.getUserProfile({ currentUser, userId });
+    const user = await userService.getUserProfile({ currentUser, userId });
 
-      res.status(HttpStatusCode.Ok).json({
-        success: true,
-        data: user,
-        message: "Users fetched successfully",
-      });
-    },
-  ];
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      data: user,
+      message: "Users fetched successfully",
+    });
+  };
 
   getSuggestedUsers = [
     async (req: Request, res: Response) => {
@@ -186,144 +146,109 @@ class UserController {
     },
   ];
 
-  reportUser = [
-    ValidatorMiddleware.inputs([
-      param("userId", "A valid User id is required").notEmpty().isUUID(),
-    ]),
-    async (req: Request, res: Response) => {
-      const userId = req?.user?.id;
+  reportUser = async (req: Request, res: Response) => {
+    const userId = req?.user?.id;
 
-      const data = await userService.reportUser(
-        userId,
-        req.params.userId,
-        req.body?.reason ?? ""
-      );
+    const data = await userService.reportUser(
+      userId,
+      req.params.userId,
+      req.body?.reason ?? ""
+    );
 
-      res.status(HttpStatusCode.Ok).json({
-        success: true,
-        data,
-        message: "User reported successfully",
-      });
-    },
-  ];
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      data,
+      message: "User reported successfully",
+    });
+  };
 
-  blockUser = [
-    ValidatorMiddleware.inputs([
-      param("userId", "User id is required").notEmpty().isUUID(),
-    ]),
-    async (req: Request, res: Response) => {
-      const userId = req?.user?.id;
+  blockUser = async (req: Request, res: Response) => {
+    const userId = req?.user?.id;
 
-      const data = await userService.blockUser(userId, req.params.userId);
+    const data = await userService.blockUser(userId, req.params.userId);
 
-      res.status(HttpStatusCode.Ok).json({
-        success: true,
-        data,
-        message: "User blocked successfully",
-      });
-    },
-  ];
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      data,
+      message: "User blocked successfully",
+    });
+  };
 
-  unblockUser = [
-    ValidatorMiddleware.inputs([
-      param("userId", "User id is required").notEmpty().isUUID(),
-    ]),
-    async (req: Request, res: Response) => {
-      const userId = req?.user?.id;
+  unblockUser = async (req: Request, res: Response) => {
+    const userId = req?.user?.id;
 
-      const data = await userService.unBlockUser(userId, req.params.userId);
+    const data = await userService.unBlockUser(userId, req.params.userId);
 
-      res.status(HttpStatusCode.Ok).json({
-        success: true,
-        data,
-        message: "User unblocked successfully",
-      });
-    },
-  ];
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      data,
+      message: "User unblocked successfully",
+    });
+  };
 
-  followUser = [
-    ValidatorMiddleware.inputs([
-      param("userId", "User id is required").notEmpty().isUUID(),
-    ]),
-    async (req: Request, res: Response) => {
-      const userId = req?.user?.id;
+  followUser = async (req: Request, res: Response) => {
+    const userId = req?.user?.id;
 
-      const data = await userService.followUser(userId, req.params.userId);
+    const data = await userService.followUser(userId, req.params.userId);
 
-      res.status(HttpStatusCode.Ok).json({
-        success: true,
-        data,
-        message: "User followed successfully",
-      });
-    },
-  ];
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      data,
+      message: "User followed successfully",
+    });
+  };
 
-  unfollowUser = [
-    ValidatorMiddleware.inputs([
-      param("userId", "User id is required").notEmpty().isUUID(),
-    ]),
-    async (req: Request, res: Response) => {
-      const userId = req?.user?.id;
+  unfollowUser = async (req: Request, res: Response) => {
+    const userId = req?.user?.id;
 
-      const data = await userService.unfollowUser(userId, req.params.userId);
+    const data = await userService.unfollowUser(userId, req.params.userId);
 
-      res.status(HttpStatusCode.Ok).json({
-        success: true,
-        data,
-        message: "User unfollowed successfully",
-      });
-    },
-  ];
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      data,
+      message: "User unfollowed successfully",
+    });
+  };
 
-  getUserFollowers = [
-    ValidatorMiddleware.inputs([
-      param("userId", "User id is required").notEmpty().isUUID(),
-    ]),
-    async (req: Request, res: Response) => {
-      const loggedInUser = req?.user?.id ?? "";
-      const userToMatchId = req?.params?.userId ?? "";
+  getUserFollowers = async (req: Request, res: Response) => {
+    const loggedInUser = req?.user?.id ?? "";
+    const userToMatchId = req?.params?.userId ?? "";
 
-      const { users, pagination } = await userService.getUserFollowers({
-        loggedInUser,
-        userToMatchId,
-        limit: 100,
-        page: 0,
-        ...req.query,
-      });
+    const { users, pagination } = await userService.getUserFollowers({
+      loggedInUser,
+      userToMatchId,
+      limit: 100,
+      page: 0,
+      ...req.query,
+    });
 
-      res.status(HttpStatusCode.Ok).json({
-        success: true,
-        data: users,
-        pagination,
-        message: "User follower(s) fetched successfully",
-      });
-    },
-  ];
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      data: users,
+      pagination,
+      message: "User follower(s) fetched successfully",
+    });
+  };
 
-  getUserFollowing = [
-    ValidatorMiddleware.inputs([
-      param("userId", "User id is required").notEmpty().isUUID(),
-    ]),
-    async (req: Request, res: Response) => {
-      const loggedInUser = req?.user?.id ?? "";
-      const userToMatchId = req?.params?.userId ?? "";
+  getUserFollowing = async (req: Request, res: Response) => {
+    const loggedInUser = req?.user?.id ?? "";
+    const userToMatchId = req?.params?.userId ?? "";
 
-      const { users, pagination } = await userService.getUserFollowing({
-        loggedInUser,
-        userToMatchId,
-        limit: 100,
-        page: 0,
-        ...req.query,
-      });
+    const { users, pagination } = await userService.getUserFollowing({
+      loggedInUser,
+      userToMatchId,
+      limit: 100,
+      page: 0,
+      ...req.query,
+    });
 
-      res.status(HttpStatusCode.Ok).json({
-        success: true,
-        data: users,
-        pagination,
-        message: "User following(s) fetched successfully",
-      });
-    },
-  ];
+    res.status(HttpStatusCode.Ok).json({
+      success: true,
+      data: users,
+      pagination,
+      message: "User following(s) fetched successfully",
+    });
+  };
 
   getMyFollowers = async (req: Request, res: Response) => {
     const currentUserId = req?.user?.id ?? "";

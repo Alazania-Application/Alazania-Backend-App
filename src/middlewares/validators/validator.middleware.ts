@@ -1,6 +1,6 @@
 import { query, ValidationChain, validationResult } from "express-validator";
 import { NextFunction, Request, Response } from "express";
-import { ErrorResponse } from "../utils";
+import { ErrorResponse } from "../../utils";
 import { HttpStatusCode } from "axios";
 
 export default class ValidatorMiddleware {
@@ -8,7 +8,7 @@ export default class ValidatorMiddleware {
    * Runs the express-validator validations
    * @param validations - an array containing the express-validator validations
    */
-  static inputs(validations: Array<ValidationChain>) {
+  protected inputs(validations: Array<ValidationChain>) {
     return async (req: Request, res: Response, next: NextFunction) => {
       await Promise.all(validations.map((validation) => validation.run(req)));
 
@@ -53,20 +53,38 @@ export default class ValidatorMiddleware {
     next();
   }
 
-  static paginationFilters(): Array<ValidationChain> {
-    return [
-      query("sort")
-        .optional()
-        .isIn(["ASC", "DESC"])
-        .withMessage("Sort must be either ASC or DESC"),
-      query("page")
-        .optional()
-        .isInt({ min: 1 })
-        .withMessage("Page must be a positive integer"),
-      query("limit")
-        .optional()
-        .isInt({ min: 1, max: 100 })
-        .withMessage("Limit must be a positive integer no greater than 100"),
-    ];
+  static paginationFilters() {
+    return async (req: Request, res: Response, next: NextFunction) => {
+      await Promise.all(
+        [
+          query("sort")
+            .optional()
+            .isIn(["ASC", "DESC"])
+            .withMessage("Sort must be either ASC or DESC"),
+          query("page")
+            .optional()
+            .isInt({ min: 1 })
+            .withMessage("Page must be a positive integer"),
+          query("limit")
+            .optional()
+            .isInt({ min: 1, max: 100 })
+            .withMessage(
+              "Limit must be a positive integer no greater than 100"
+            ),
+        ].map((validation) => validation.run(req))
+      );
+
+      const errors = validationResult(req);
+
+      if (errors.isEmpty()) {
+        return next();
+      }
+
+      res.status(422).json({
+        success: false,
+        message: errors?.array()[0].msg,
+        errors: errors.array()[0],
+      });
+    };
   }
 }

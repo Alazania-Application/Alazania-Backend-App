@@ -1,5 +1,6 @@
 import { interestController } from "@/controllers/interest.controllers";
 import { authMiddleWare } from "@/middlewares/authenticator.middleware";
+import { interestValidator } from "@/middlewares/validators";
 import { Router } from "express";
 
 export const interestRouter = Router();
@@ -8,6 +9,7 @@ export const interestRouter = Router();
 interestRouter.post(
   "/topic",
   authMiddleWare.protectRoute,
+  interestValidator.validateTopic,
   interestController.createTopic
 );
 
@@ -32,12 +34,14 @@ interestRouter.get(
 interestRouter.post(
   "/topic/follow",
   authMiddleWare.protectRoute,
+  interestValidator.validateTopics,
   interestController.addUserInterests
 );
 
 interestRouter.post(
   "/topic/unfollow",
   authMiddleWare.protectRoute,
+  interestValidator.validateTopics,
   interestController.removeUserInterests
 );
 
@@ -45,12 +49,14 @@ interestRouter.post(
 interestRouter.post(
   "/hashtag/follow",
   authMiddleWare.protectRoute,
+  interestValidator.validateHashtags,
   interestController.followHashtags
 );
 
 interestRouter.post(
   "/hashtag/unfollow",
   authMiddleWare.protectRoute,
+  interestValidator.validateHashtags,
   interestController.unfollowHashtags
 );
 
@@ -69,6 +75,7 @@ interestRouter.get(
 interestRouter.get(
   "/hashtags/my-topics",
   authMiddleWare.protectRoute,
+  interestValidator.validateGetTopic,
   interestController.getUserTopicHashtags
 );
 

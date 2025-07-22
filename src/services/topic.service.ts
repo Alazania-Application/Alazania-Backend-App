@@ -19,16 +19,16 @@ class TopicService extends BaseService {
 
     const result = await this.writeToDB(
       `
-            MERGE (topic:${NodeLabels.Topic} {slug: $slug})
-            ON CREATE SET
-                topic.name = $name,
-                topic.description = $description,
-                topic.popularity = 0,
-                topic.createdAt = datetime($createdAt)
-            ON MATCH SET
-                topic.name = $name,
-                topic.description = $description
-            RETURN topic
+        MERGE (topic:${NodeLabels.Topic} {slug: $slug})
+        ON CREATE SET
+            topic.name = $name,
+            topic.description = $description,
+            topic.popularity = 0,
+            topic.createdAt = datetime($createdAt)
+        ON MATCH SET
+            topic.name = $name,
+            topic.description = $description
+        RETURN topic
         `,
       {
         slug,

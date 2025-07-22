@@ -1,6 +1,6 @@
 import { CreatePostInput, IUser, Post } from "@/models";
 import BaseService from "./base.service";
-import { NodeLabels, RelationshipTypes } from "@/enums";
+import { ActivityTypes, NodeLabels, RelationshipTypes } from "@/enums";
 import {
   ErrorResponse,
   extractHashtags,
@@ -13,6 +13,7 @@ import {
 } from "@/utils";
 import { deleteFolderByPrefix } from "@/middlewares/upload.middleware";
 import { HttpStatusCode } from "axios";
+import slugify from "slugify";
 
 class PostService extends BaseService {
   private extractPost = (data: Record<any, any>, userId?: string) => {
@@ -143,6 +144,14 @@ class PostService extends BaseService {
     const hashtags = extractHashtags(payload.caption);
     const mentions = extractMentions(payload.caption);
 
+    const topicSlug = payload?.topicSlug
+      ? slugify(payload.topicSlug, {
+          lower: true,
+          trim: true,
+          remove: /[*+~.()'"!:@#]/g,
+        })
+      : "";
+
     const now = new Date();
 
     const params = {
@@ -150,8 +159,8 @@ class PostService extends BaseService {
       userId: payload.userId,
       caption: payload.caption,
       files: payload?.files ?? [],
-      createdAt: now.toISOString(),
-      topicSlug: payload?.topicSlug || "",
+      timestamp: now.toISOString(),
+      topicSlug,
       hashtags,
       mentions,
     };
@@ -165,7 +174,7 @@ class PostService extends BaseService {
           id: $postId,
           caption: $caption,
           userId: u.id,
-          createdAt: datetime($createdAt),
+          createdAt: datetime($timestamp),
           likes: 0,
           comments: 0,
           shares: 0,
@@ -177,67 +186,34 @@ class PostService extends BaseService {
 
         WITH p, u
 
+        // // match and delete session
+        MATCH (session:${NodeLabels.PostSession} {sessionId: $postId})
+        DETACH DELETE session
+
         // // Optional link to topic
-        OPTIONAL MATCH (t:${NodeLabels.Topic} {slug: $topicSlug})
-        FOREACH (_ IN CASE WHEN t IS NOT NULL THEN [1] ELSE [] END |
-          MERGE (p)-[:${RelationshipTypes.BELONGS_TO}]->(t)
-          MERGE (u)-[:${RelationshipTypes.INTERESTED_IN}]->(t)
+        FOREACH (_ IN CASE WHEN $topicSlug <> "" THEN [1] ELSE [] END |
+          MERGE (topic:${NodeLabels.Topic} {slug: $topicSlug})
+          ON CREATE SET
+            topic.popularity = 0,
+            topic.createdAt = datetime($timestamp)
+
+          MERGE (p)-[:${RelationshipTypes.BELONGS_TO}]->(topic)
+          MERGE (u)-[r:${RelationshipTypes.INTERESTED_IN}]->(topic)
+          ON CREATE SET
+            r.interestLevel = 5,
+            r.since = datetime($timestamp)
         )
 
-        WITH p, u
-
-        // // Optional match and delete session
-        OPTIONAL MATCH (session:${NodeLabels.PostSession} {sessionId: $postId})
-        FOREACH (_ IN CASE WHEN session IS NOT NULL THEN [1] ELSE [] END |
-          DETACH DELETE session
-        )
-
-
-        WITH p, u, $files AS files
-
-        // // Create new file nodes
-        WHERE size(COALESCE(files, [])) > 0
-        UNWIND range(0, size(COALESCE(files, []))-1) AS idx
-
-        WITH p, u, idx, files[idx] AS file //, COALESCE(files[idx].tags, []) AS tags
-
-        CREATE (f:${NodeLabels.File})
-        SET f.url = file.url, f.key = file.key, f.fileType = file.fileType
-
-        // // Create post <-> file relationship
-        MERGE (p)-[r:${RelationshipTypes.HAS_FILE}]->(f)
-        SET r.order = idx
-
-        WITH p, u, f, COALESCE(file.tags, []) AS tags
-
-        // // create file <-> user tags
-        UNWIND tags AS tag
-        OPTIONAL MATCH(taggedUser:${NodeLabels.User} {id: tag.userId})
-        OPTIONAL MATCH(u)<-[blockedByUser:${RelationshipTypes.BLOCKED}]-(taggedUser)
-        FOREACH (_ IN CASE WHEN taggedUser IS NOT NULL AND blockedByUser IS NULL THEN [1] ELSE [] END |
-            MERGE (f)-[tagRelationship:${RelationshipTypes.TAGGED}]->(taggedUser)
-            ON CREATE SET
-             tagRelationship.positionX = COALESCE(tag.positionX,null),
-             tagRelationship.positionY = COALESCE(tag.positionY,null)
-    
-            // // create post <-> user mention
-            MERGE (p)-[mentionRel:${RelationshipTypes.MENTIONED}]->(taggedUser)
-             ON CREATE SET mentionRel.timestamp = datetime($createdAt)
-        )
-
-        WITH p, u, f,
-        COLLECT(DISTINCT tag) AS tags
-          
-        WITH p, u, COLLECT(DISTINCT f) AS files, COALESCE($hashtags, []) AS hashtags
+        WITH p, u, COALESCE($hashtags, []) AS hashtags
 
         // Handle hashtags
         FOREACH (hashtag IN hashtags |
           MERGE (h:${NodeLabels.Hashtag} {slug: hashtag})
           ON CREATE SET 
             h.popularity = 0,
-            h.createdAt = datetime($createdAt)
+            h.createdAt = datetime($timestamp)
           SET h.popularity = COALESCE(h.popularity, 0) + 1,
-              h.lastUsedAt = datetime($createdAt)
+              h.lastUsedAt = datetime($timestamp)
 
           MERGE (p)-[:${RelationshipTypes.HAS_HASHTAG}]->(h)
           MERGE (u)-[r:${RelationshipTypes.FOLLOWS_HASHTAG}]->(h)
@@ -245,23 +221,104 @@ class PostService extends BaseService {
             r.interestLevel = 5,
             r.since = datetime()
         )
-
-        WITH p, u, COALESCE($mentions, []) AS mentions
         
+        WITH p, u, COALESCE($files,[]) AS files
+
         CALL {
-          WITH p, u, mentions
-           // // Handle user mentions
-          UNWIND mentions AS mention
-          OPTIONAL MATCH(userMentioned:${NodeLabels.User} {username: mention})
-          OPTIONAL MATCH(userMentioned)-[blockedByUser:${RelationshipTypes.BLOCKED}]->(u)
+          WITH p, u, files
+
+          // // Create new file nodes
+          UNWIND range(0, size(files)-1) AS idx
   
-          FOREACH (_ IN CASE WHEN userMentioned IS NOT NULL AND blockedByUser IS NULL THEN [1] ELSE [] END |
-              MERGE (p)-[r:${RelationshipTypes.MENTIONED}]->(userMentioned)
-              ON CREATE SET r.timestamp = datetime($createdAt)
-          )
+          WITH p, u, idx, files[idx] AS file //, COALESCE(files[idx].tags, []) AS tags
+  
+          CREATE (f:${NodeLabels.File})
+            SET f.url = file.url, f.key = file.key, f.fileType = file.fileType
+  
+          // // Create post - file relationship
+          MERGE (p)-[r:${RelationshipTypes.HAS_FILE}]->(f)
+            SET r.order = idx
+  
+          WITH p, u, f, COALESCE(file.tags, []) AS tags
+            // // create file - user tags
+            CALL {
+                WITH p, u, f, tags
+                UNWIND tags AS tag
+    
+                MATCH(taggedUser:${NodeLabels.User} {id: tag.userId})
+                OPTIONAL MATCH(taggedUser)-[blockedByUser:${RelationshipTypes.BLOCKED}]->(u)
+                WHERE blockedByUser IS NULL 
+
+                WITH p, u, f, taggedUser, tag
+    
+                MERGE (f)-[tagRelationship:${RelationshipTypes.TAGGED}]->(taggedUser)
+                ON CREATE SET
+                  tagRelationship.positionX = COALESCE(tag.positionX,null),
+                  tagRelationship.positionY = COALESCE(tag.positionY,null)
+    
+                // // create post - user mention
+                MERGE (p)-[mentionRel:${RelationshipTypes.MENTIONED}]->(taggedUser)
+                  ON CREATE SET mentionRel.timestamp = datetime($timestamp)
+
+                WITH p, u, f, taggedUser, tag
+                WHERE taggedUser.id <> u.id
+
+                WITH p, u, f, taggedUser, tag
+                
+                CREATE (activity:${NodeLabels.Activity} {
+                  id: randomUUID(), 
+                  type: "${ActivityTypes.TAG}",
+                  actorId: $userId,
+                  targetId: p.id,
+                  message: u.username + " tagged you in a post",
+                  createdAt: datetime($timestamp)
+                })
+    
+                CREATE (taggedUser)-[:${RelationshipTypes.HAS_ACTIVITY} {timestamp:$timestamp}]->(activity)
+                WITH p AS post, u AS user, f AS file, activity
+                CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
+                
+                RETURN post, user, file
+            }
+
+          RETURN post, user, COLLECT(DISTINCT file) AS processedFiles
         }
 
-        RETURN p{.*} AS post
+        WITH post AS p, user AS u, COALESCE($mentions, []) AS mentions
+
+        // // Handle user mentions
+        CALL {
+          WITH p, u, mentions
+
+          UNWIND mentions AS mention
+
+          MATCH(userMentioned:${NodeLabels.User} {username: mention})
+          OPTIONAL MATCH(userMentioned)-[blockedByUser:${RelationshipTypes.BLOCKED}]->(u)
+          WHERE blockedByUser IS NULL AND userMentioned.id <> u.id
+
+          MERGE (p)-[r:${RelationshipTypes.MENTIONED}]->(userMentioned)
+            ON CREATE SET r.timestamp = datetime($timestamp)
+        
+          WITH p, u, userMentioned, mention
+          WHERE userMentioned.id <> u.id
+
+          CREATE (activity:${NodeLabels.Activity} {
+            id: randomUUID(), 
+            type: "${ActivityTypes.MENTIONED}",
+            actorId: $userId,
+            targetId: p.id,
+            message: u.username + " mentioned you in a post",
+            createdAt: datetime($timestamp)
+          })
+
+          CREATE (userMentioned)-[:${RelationshipTypes.HAS_ACTIVITY} {timestamp:$timestamp}]->(activity)
+          WITH p AS post, mention, activity
+          CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
+
+           RETURN post, COLLECT(mention) AS _mentions
+         }
+
+        RETURN post{.*} AS post
       `,
       params
     );
@@ -359,7 +416,7 @@ class PostService extends BaseService {
         MERGE (u)-[r:${RelationshipTypes.LIKED}]->(p)
         ON CREATE SET r.timestamp = datetime($timestamp), p.likes = coalesce(p.likes, 0) + 1
 
-        with p
+        with p, u
 
         MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(p)
         OPTIONAL MATCH (p)-[:${RelationshipTypes.BELONGS_TO}]->(topic:${NodeLabels.Topic})
@@ -367,11 +424,31 @@ class PostService extends BaseService {
         OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(f:${NodeLabels.File})
         ORDER BY r.order
 
-        WITH p, creator, topic, COLLECT(hashtag.name) as hashtags, COLLECT(f) AS files, r
-        
+        WITH p, u, creator, topic, COLLECT(hashtag.name) as hashtags, COLLECT(f) AS files
 
-        RETURN topic, hashtags, files, {userId: creator.id, username: COALESCE(creator.username, creator.email)} AS creator,
-          p {.*, isMyPost: (creator.id = $userId)} as post
+        WHERE creator.id <> u.id
+
+        CREATE (activity:${NodeLabels.Activity} {
+            id: randomUUID(), 
+            type: "${ActivityTypes.LIKE}",
+            actorId: $userId,
+            targetId: p.id,
+            message: u.username + " liked your post",
+            createdAt: datetime($timestamp)
+          })
+
+        CREATE (creator)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
+
+        WITH p, u, creator, topic, hashtags, files, activity
+        CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
+
+        RETURN p{.*, 
+                  isMyPost: (creator.id = $userId), 
+                  topic, 
+                  hashtags, 
+                  files, 
+                  creator: {userId: creator.id, username: COALESCE(creator.username, creator.email)}
+               } as post
       `,
       {
         userId,
@@ -380,7 +457,7 @@ class PostService extends BaseService {
       }
     );
 
-    return result.records.map((record) => this.extractPost(record, userId))[0];
+    return this.extractPost(result.records[0], userId);
   }
 
   async unlikePost(userId: string, postId: string) {
@@ -413,7 +490,7 @@ class PostService extends BaseService {
 
   // Comments
   async commentOnPost(userId: string, postId: string, comment: string) {
-    const createdAt = new Date().toISOString();
+    const timestamp = new Date().toISOString();
     const hashtags = extractHashtags(comment) ?? [];
     const mentions = extractMentions(comment) ?? [];
 
@@ -430,8 +507,9 @@ class PostService extends BaseService {
         id: randomUUID(),
         comment: $comment,
         likes: 0,
-        createdAt: datetime($createdAt),
-        updatedAt: datetime($createdAt),
+        createdAt: datetime($timestamp),
+        updatedAt: datetime($timestamp),
+        isRoot: true,
         isDeleted: false
       })
       
@@ -439,9 +517,24 @@ class PostService extends BaseService {
       MERGE (p)-[:${RelationshipTypes.HAS_COMMENT}]->(c)
       MERGE (u)-[comment:${RelationshipTypes.COMMENTED_ON}]->(p)
       ON CREATE SET 
-        comment.timestamp = datetime($createdAt),
+        comment.timestamp = datetime($timestamp),
         comment.isDeleted = false
       SET p.comments = coalesce(p.comments, 0) + 1
+
+      WHERE creator.id <> u.id
+
+      CREATE (activity:${NodeLabels.Activity} {
+            id: randomUUID(), 
+            type: "${ActivityTypes.COMMENT}",
+            actorId: $userId,
+            targetId: c.id,
+            message: u.username + " commented on your post"
+            createdAt: datetime($timestamp)
+          })
+    
+      CREATE (creator)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
+      WITH p, u, c, activity
+      CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
 
       WITH p, u, c, COALESCE($mentions, []) AS mentions
 
@@ -449,25 +542,41 @@ class PostService extends BaseService {
           WITH p, u, c, mentions
           // // Handle user mentions
           UNWIND mentions AS mention
-          OPTIONAL MATCH(userMentioned:${NodeLabels.User} {username: mention})
+          MATCH(userMentioned:${NodeLabels.User} {username: mention})
           OPTIONAL MATCH(userMentioned)-[blockedByUser:${RelationshipTypes.BLOCKED}]->(u)
-  
-          FOREACH (_ IN CASE WHEN userMentioned IS NOT NULL AND blockedByUser IS NULL THEN [1] ELSE [] END |
-              MERGE (c)-[r:${RelationshipTypes.MENTIONED}]->(userMentioned)
-              ON CREATE SET r.timestamp = datetime($createdAt)
-          )
-          
+
+          WHERE blockedByUser IS NULL AND userMentioned.id <> u.id
+
+          MERGE (c)-[r:${RelationshipTypes.MENTIONED}]->(userMentioned)
+              ON CREATE SET r.timestamp = datetime($timestamp)
+
+          WITH p, u, c, userMentioned, mention
+          WHERE userMentioned.id <> u.id
+
+          CREATE (activity:${NodeLabels.Activity} {
+              id: randomUUID(), 
+              type: "${ActivityTypes.MENTIONED}",
+              actorId: $userId,
+              targetId: p.id,
+              message: u.username + " commented on your post",
+              createdAt: datetime($timestamp)
+            })
+        
+          CREATE (userMentioned)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
+          WITH p, u, c, activity, mention
+          CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
+
           RETURN c AS user_comment, COLLECT(mention) AS user_mentions
       }
 
         RETURN user_comment{.*} AS comment
       `,
-      { userId, postId, comment, createdAt, hashtags, mentions }
+      { userId, postId, comment, timestamp, hashtags, mentions }
     );
 
     return {
       comment,
-      createdAt: new Date(createdAt),
+      timestamp: new Date(timestamp),
     };
   }
 
@@ -477,27 +586,27 @@ class PostService extends BaseService {
     parentCommentId: string,
     comment: string
   ) {
-    const createdAt = new Date().toISOString();
+    const timestamp = new Date().toISOString();
     const hashtags = extractHashtags(comment) ?? [];
     const mentions = extractMentions(comment) ?? [];
 
     return await this.writeToDB(
       `
         MATCH (u:${NodeLabels.User} {id: $userId})
-        MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(p:${NodeLabels.Post} {id: $postId, isDeleted: false})-[:${RelationshipTypes.HAS_COMMENT}]->(comment:${NodeLabels.Comment} {id: $parentCommentId, isDeleted: false})-[:${RelationshipTypes.COMMENTED_BY}]->(commenter:${NodeLabels.User})
+        MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(p:${NodeLabels.Post} {id: $postId, isDeleted: false})-[:${RelationshipTypes.HAS_COMMENT}]->(comment:${NodeLabels.Comment} {id: $parentCommentId, isDeleted: false})-[:${RelationshipTypes.COMMENTED_BY}]->(author:${NodeLabels.User})
 
         OPTIONAL MATCH(u)-[blockedCreator:${RelationshipTypes.BLOCKED}]->(creator)
         OPTIONAL MATCH(u)<-[blockedByCreator:${RelationshipTypes.BLOCKED}]-(creator)
-        OPTIONAL MATCH(u)-[blockedCommenter:${RelationshipTypes.BLOCKED}]->(commenter)
-        OPTIONAL MATCH(u)<-[blockedByCommenter:${RelationshipTypes.BLOCKED}]-(commenter)
+        OPTIONAL MATCH(u)-[blockedCommenter:${RelationshipTypes.BLOCKED}]->(author)
+        OPTIONAL MATCH(u)<-[blockedByCommenter:${RelationshipTypes.BLOCKED}]-(author)
         WHERE blockedCreator IS NULL AND blockedByCreator IS NULL AND blockedCommenter IS NULL AND blockedByCommenter IS NULL
         
         CREATE (reply:${NodeLabels.Comment} {
           id: randomUUID(),
           comment: $comment,
           likes: 0,
-          createdAt: datetime($createdAt),
-          updatedAt: datetime($createdAt),
+          createdAt: datetime($timestamp),
+          updatedAt: datetime($timestamp),
           isDeleted: false
         })
 
@@ -508,29 +617,58 @@ class PostService extends BaseService {
 
         SET p.comments = coalesce(p.comments, 0) + 1
 
+        WHERE author.id <> u.id
+        CREATE (activity:${NodeLabels.Activity} {
+            id: randomUUID(), 
+            type: "${ActivityTypes.REPLY}",
+            actorId: $userId,
+            targetId: reply.id,
+            message: u.username + " replied your comment",
+            createdAt: datetime($timestamp)
+        })
+  
+        CREATE (author)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
+        WITH p, u, reply, activity
+        CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
+
         WITH p, u, reply, COALESCE($mentions, []) AS mentions
 
         CALL {
             WITH p, reply, u, mentions
             // // Handle user mentions
             UNWIND mentions AS mention
-            OPTIONAL MATCH(userMentioned:${NodeLabels.User} {username: mention})
+            MATCH(userMentioned:${NodeLabels.User} {username: mention})
             OPTIONAL MATCH(userMentioned)-[blockedByUser:${RelationshipTypes.BLOCKED}]->(u)
-    
-            FOREACH (_ IN CASE WHEN userMentioned IS NOT NULL AND blockedByUser IS NULL THEN [1] ELSE [] END |
-                MERGE (reply)-[r:${RelationshipTypes.MENTIONED}]->(userMentioned)
-                ON CREATE SET r.timestamp = datetime($createdAt)
-            )
+
+            WHERE blockedByUser IS NULL AND userMentioned.id <> u.id
+  
+            MERGE (reply)-[r:${RelationshipTypes.MENTIONED}]->(userMentioned)
+            ON CREATE SET r.timestamp = datetime($timestamp)
+
+            WITH p, reply, u, mention, userMentioned
+
+            CREATE (activity:${NodeLabels.Activity} {
+                id: randomUUID(), 
+                type: "${ActivityTypes.MENTIONED}",
+                actorId: $userId,
+                targetId: reply.id,
+                message: u.username + " mentioned your in a comment",
+                createdAt: datetime($timestamp)
+            })
+      
+            CREATE (userMentioned)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
+            WITH activity
+            CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'           
         }
 
-        RETURN c{.*} AS comment
+        RETURN reply{.*} AS comment
       `,
       {
         userId,
         postId,
         parentCommentId,
         comment,
-        createdAt,
+        timestamp,
         hashtags,
         mentions,
       }
@@ -541,17 +679,32 @@ class PostService extends BaseService {
     const result = await this.writeToDB(
       `
         MATCH (u:${NodeLabels.User} {id: $userId})
-        MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(p:${NodeLabels.Post} {isDeleted: false})-[:${RelationshipTypes.HAS_COMMENT}]->(comment:${NodeLabels.Comment} {id: $commentId, isDeleted: false})-[:${RelationshipTypes.COMMENTED_BY}]->(commenter:${NodeLabels.User})
+        MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(p:${NodeLabels.Post} {isDeleted: false})-[:${RelationshipTypes.HAS_COMMENT}]->(comment:${NodeLabels.Comment} {id: $commentId, isDeleted: false})-[:${RelationshipTypes.COMMENTED_BY}]->(author:${NodeLabels.User})
 
         OPTIONAL MATCH(u)-[blockedCreator:${RelationshipTypes.BLOCKED}]->(creator)
         OPTIONAL MATCH(u)<-[blockedByCreator:${RelationshipTypes.BLOCKED}]-(creator)
-        OPTIONAL MATCH(u)-[blockedCommenter:${RelationshipTypes.BLOCKED}]->(commenter)
-        OPTIONAL MATCH(u)<-[blockedByCommenter:${RelationshipTypes.BLOCKED}]-(commenter)
+        OPTIONAL MATCH(u)-[blockedCommenter:${RelationshipTypes.BLOCKED}]->(author)
+        OPTIONAL MATCH(u)<-[blockedByCommenter:${RelationshipTypes.BLOCKED}]-(author)
         WHERE blockedCreator IS NULL AND blockedByCreator IS NULL AND blockedCommenter IS NULL AND blockedByCommenter IS NULL
-
 
         MERGE (u)-[r:${RelationshipTypes.LIKED}]->(comment)
         ON CREATE SET r.timestamp = datetime($timestamp), comment.likes = coalesce(comment.likes, 0) + 1
+
+        WHERE author.id <> u.id
+
+        CREATE (activity:${NodeLabels.Activity} {
+            id: randomUUID(), 
+            type: "${ActivityTypes.LIKE}",
+            actorId: $userId,
+            targetId: $commentId,
+            message: u.username + " liked your comment",
+            createdAt: datetime($timestamp)
+        })
+  
+        CREATE (author)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
+
+        WITH comment, activity
+        CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
 
         RETURN comment
       `,
@@ -598,7 +751,7 @@ class PostService extends BaseService {
   }
 
   async deleteComment(userId: string, commentId: string) {
-     await this.writeToDB(
+    await this.writeToDB(
       `
         MATCH (u:${NodeLabels.User} {id: $userId})<-[:${RelationshipTypes.COMMENTED_BY}]-(c:${NodeLabels.Comment} {id: $commentId, isDeleted: false})
         MATCH (p:${NodeLabels.Post})-[:${RelationshipTypes.HAS_COMMENT}]->(c)
@@ -621,17 +774,61 @@ class PostService extends BaseService {
         OPTIONAL MATCH(u)<-[blockedByUser:${RelationshipTypes.BLOCKED}]-(creator)
         WHERE blockedUser IS NULL AND blockedByUser IS NULL
 
-        OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_COMMENT}]->(c:${NodeLabels.Comment} {isDeleted: false})
-        OPTIONAL MATCH (c)-[:${RelationshipTypes.COMMENTED_BY}]->(commenter: ${NodeLabels.User})
-        RETURN c
-        {.*, 
-          commenter:{
-            userId: commenter.id,
-            username: commenter.username,
-            avatar: commenter.avatar
+        OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_COMMENT}]->(c:${NodeLabels.Comment} {isDeleted: false, isRoot:true })
+        OPTIONAL MATCH (c)-[:${RelationshipTypes.COMMENTED_BY}]->(author: ${NodeLabels.User})
+        
+        RETURN c{.*, 
+          author:{
+            userId: author.id,
+            username: author.username,
+            avatar: author.avatar
           }
-        } 
-          AS comment
+        } AS comment
+
+        ORDER BY comment.createdAt DESC
+      `,
+      params
+    );
+
+    return results.records
+      .map((record) => {
+        if (Boolean(record)) {
+          const comment = valueToNativeType(record?.get("comment"));
+          return comment;
+        }
+      })
+      .filter((v) => Boolean(v));
+  }
+
+  async getPostCommentReplies(
+    params: IReadQueryParams & {
+      postId: string;
+      commentId: string;
+      userId: string;
+    }
+  ) {
+    const results = await this.readFromDB(
+      `
+        MATCH (u:${NodeLabels.User} {id: $userId})
+        MATCH (post:${NodeLabels.Post} {id: $postId, isDeleted: false})-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User})
+       
+        OPTIONAL MATCH(u)-[blockedUser:${RelationshipTypes.BLOCKED}]->(creator)
+        OPTIONAL MATCH(u)<-[blockedByUser:${RelationshipTypes.BLOCKED}]-(creator)
+        WHERE blockedUser IS NULL AND blockedByUser IS NULL
+
+        OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_COMMENT}]->(c:${NodeLabels.Comment} { isDeleted: false, isRoot:true })<-:${RelationshipTypes.REPLIED_TO}-(reply:${NodeLabels.Comment} { isDeleted: false })
+        OPTIONAL MATCH (reply)-[:${RelationshipTypes.COMMENTED_BY}]->(author: ${NodeLabels.User})
+
+        LIMIT $limit
+        SKIP $skip
+        
+        RETURN reply{.*, 
+          author:{
+            userId: author.id,
+            username: author.username,
+            avatar: author.avatar
+          }
+        } AS comment
 
         ORDER BY comment.createdAt DESC
       `,
@@ -1209,11 +1406,11 @@ class PostService extends BaseService {
     );
   }
 
-  reportPost = async (
+  async reportPost(
     currentUserId: string = "",
     postToReportId: string = "",
     reason: string = ""
-  ) => {
+  ) {
     const query = `
       MATCH (currentUser: ${NodeLabels.User} {id: $currentUserId})
       MATCH (postToReport: ${NodeLabels.Post} {id: $postToReportId, isDeleted:false})
@@ -1233,7 +1430,7 @@ class PostService extends BaseService {
       reason,
       timestamp: new Date().toISOString(),
     });
-  };
+  }
 
   // Example: Update interest level based on engagement
   async updateInterestLevel(
