@@ -426,21 +426,25 @@ class PostService extends BaseService {
 
         WITH p, u, creator, topic, COLLECT(hashtag.name) as hashtags, COLLECT(f) AS files
 
-        WHERE creator.id <> u.id
+        CALL( p, u, creator ) {
+          WITH p, u, creator
+          WHERE creator.id <> u.id
+  
+          CREATE (activity:${NodeLabels.Activity} {
+              id: randomUUID(), 
+              type: "${ActivityTypes.LIKE}",
+              actorId: $userId,
+              targetId: p.id,
+              message: u.username + " liked your post",
+              createdAt: datetime($timestamp)
+            })
+  
+          CREATE (creator)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
+  
+          WITH activity
+          CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
+        }
 
-        CREATE (activity:${NodeLabels.Activity} {
-            id: randomUUID(), 
-            type: "${ActivityTypes.LIKE}",
-            actorId: $userId,
-            targetId: p.id,
-            message: u.username + " liked your post",
-            createdAt: datetime($timestamp)
-          })
-
-        CREATE (creator)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
-
-        WITH p, u, creator, topic, hashtags, files, activity
-        CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
 
         RETURN p{.*, 
                   isMyPost: (creator.id = $userId), 
@@ -476,8 +480,13 @@ class PostService extends BaseService {
 
         WITH p, creator, topic, COLLECT(hashtag.name) as hashtags, COLLECT(f) AS files, r
 
-        RETURN topic, hashtags, files, {userId: creator.id, username: COALESCE(creator.username, creator.email)} AS creator,
-          p {.*, isMyPost: (creator.id = $userId)} as post
+        RETURN p{.*, 
+                  isMyPost: (creator.id = $userId), 
+                  topic, 
+                  hashtags, 
+                  files, 
+                  creator: {userId: creator.id, username: COALESCE(creator.username, creator.email)}
+               } as post
       `,
       {
         userId,
@@ -485,7 +494,7 @@ class PostService extends BaseService {
       }
     );
 
-    return result.records.map((record) => this.extractPost(record, userId))[0];
+    return this.extractPost(result.records[0], userId);
   }
 
   // Comments
@@ -494,7 +503,7 @@ class PostService extends BaseService {
     const hashtags = extractHashtags(comment) ?? [];
     const mentions = extractMentions(comment) ?? [];
 
-    await this.writeToDB(
+    const result = await this.writeToDB(
       `
       MATCH (u:${NodeLabels.User} {id: $userId})
       MATCH (p:${NodeLabels.Post} {id: $postId, isDeleted: false})<-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User})
@@ -521,24 +530,29 @@ class PostService extends BaseService {
         comment.isDeleted = false
       SET p.comments = coalesce(p.comments, 0) + 1
 
-      WHERE creator.id <> u.id
+      WITH *
 
-      CREATE (activity:${NodeLabels.Activity} {
-            id: randomUUID(), 
-            type: "${ActivityTypes.COMMENT}",
-            actorId: $userId,
-            targetId: c.id,
-            message: u.username + " commented on your post"
-            createdAt: datetime($timestamp)
-          })
-    
-      CREATE (creator)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
-      WITH p, u, c, activity
-      CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
+      CALL( p, u, c, creator ){
+        WITH p, u, c, creator, $timestamp AS timestamp
+        WHERE creator.id <> u.id
+  
+        CREATE (activity:${NodeLabels.Activity} {
+              id: randomUUID(), 
+              type: "${ActivityTypes.COMMENT}",
+              actorId: $userId,
+              targetId: c.id,
+              message: u.username + " commented on your post",
+              createdAt: datetime(timestamp)
+            })
+      
+        CREATE (creator)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
+        WITH activity
+        CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
+      }
 
       WITH p, u, c, COALESCE($mentions, []) AS mentions
 
-      CALL {
+      CALL(p, u, c, mentions) {
           WITH p, u, c, mentions
           // // Handle user mentions
           UNWIND mentions AS mention
@@ -549,22 +563,26 @@ class PostService extends BaseService {
 
           MERGE (c)-[r:${RelationshipTypes.MENTIONED}]->(userMentioned)
               ON CREATE SET r.timestamp = datetime($timestamp)
+          
+          WITH *
 
-          WITH p, u, c, userMentioned, mention
-          WHERE userMentioned.id <> u.id
+          CALL (p, u, c, userMentioned){
+            WITH p, u, c, userMentioned
+            WHERE userMentioned.id <> u.id
 
-          CREATE (activity:${NodeLabels.Activity} {
-              id: randomUUID(), 
-              type: "${ActivityTypes.MENTIONED}",
-              actorId: $userId,
-              targetId: p.id,
-              message: u.username + " commented on your post",
-              createdAt: datetime($timestamp)
-            })
-        
-          CREATE (userMentioned)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
-          WITH p, u, c, activity, mention
-          CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
+            CREATE (activity:${NodeLabels.Activity} {
+                id: randomUUID(), 
+                type: "${ActivityTypes.MENTIONED}",
+                actorId: $userId,
+                targetId: p.id,
+                message: u.username + " mentioned you in a comment",
+                createdAt: datetime($timestamp)
+              })
+          
+            CREATE (userMentioned)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
+            WITH activity
+            CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
+          }
 
           RETURN c AS user_comment, COLLECT(mention) AS user_mentions
       }
@@ -574,8 +592,10 @@ class PostService extends BaseService {
       { userId, postId, comment, timestamp, hashtags, mentions }
     );
 
+    const record = valueToNativeType(result.records[0]?.get("comment"));
+
     return {
-      comment,
+      comment: record,
       timestamp: new Date(timestamp),
     };
   }
@@ -590,7 +610,7 @@ class PostService extends BaseService {
     const hashtags = extractHashtags(comment) ?? [];
     const mentions = extractMentions(comment) ?? [];
 
-    return await this.writeToDB(
+    const result = await this.writeToDB(
       `
         MATCH (u:${NodeLabels.User} {id: $userId})
         MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(p:${NodeLabels.Post} {id: $postId, isDeleted: false})-[:${RelationshipTypes.HAS_COMMENT}]->(comment:${NodeLabels.Comment} {id: $parentCommentId, isDeleted: false})-[:${RelationshipTypes.COMMENTED_BY}]->(author:${NodeLabels.User})
@@ -617,23 +637,29 @@ class PostService extends BaseService {
 
         SET p.comments = coalesce(p.comments, 0) + 1
 
-        WHERE author.id <> u.id
-        CREATE (activity:${NodeLabels.Activity} {
-            id: randomUUID(), 
-            type: "${ActivityTypes.REPLY}",
-            actorId: $userId,
-            targetId: reply.id,
-            message: u.username + " replied your comment",
-            createdAt: datetime($timestamp)
-        })
-  
-        CREATE (author)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
-        WITH p, u, reply, activity
-        CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
+        WITH *
+
+        CALL( p, u, reply, author ){
+          WITH p, u, reply, author, $timestamp AS timestamp
+          WHERE author.id <> u.id
+          CREATE (activity:${NodeLabels.Activity} {
+              id: randomUUID(), 
+              type: "${ActivityTypes.REPLY}",
+              actorId: $userId,
+              targetId: reply.id,
+              message: u.username + " replied your comment",
+              createdAt: datetime(timestamp)
+          })
+    
+          CREATE (author)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
+          WITH p, u, reply, activity
+          CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
+        }
+
 
         WITH p, u, reply, COALESCE($mentions, []) AS mentions
 
-        CALL {
+        CALL(p, reply, u, mentions) {
             WITH p, reply, u, mentions
             // // Handle user mentions
             UNWIND mentions AS mention
@@ -647,21 +673,27 @@ class PostService extends BaseService {
 
             WITH p, reply, u, mention, userMentioned
 
-            CREATE (activity:${NodeLabels.Activity} {
-                id: randomUUID(), 
-                type: "${ActivityTypes.MENTIONED}",
-                actorId: $userId,
-                targetId: reply.id,
-                message: u.username + " mentioned your in a comment",
-                createdAt: datetime($timestamp)
-            })
-      
-            CREATE (userMentioned)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
-            WITH activity
-            CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'           
+            CALL (p, u, reply, userMentioned) {
+                WITH p, u, reply, userMentioned
+                WHERE userMentioned.id <> u.id
+
+                CREATE (activity:${NodeLabels.Activity} {
+                    id: randomUUID(), 
+                    type: "${ActivityTypes.MENTIONED}",
+                    actorId: $userId,
+                    targetId: reply.id,
+                    message: u.username + " mentioned your in a comment",
+                    createdAt: datetime($timestamp)
+                })
+          
+                CREATE (userMentioned)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
+                WITH activity
+                CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'   
+          }  
+            RETURN COLLECT(mention) AS user_mentions      
         }
 
-        RETURN reply{.*} AS comment
+        RETURN reply{.*, mentions: user_mentions} AS comment
       `,
       {
         userId,
@@ -673,6 +705,8 @@ class PostService extends BaseService {
         mentions,
       }
     );
+
+    return valueToNativeType(result.records[0]?.get("comment"));
   }
 
   async likeAComment(userId: string, commentId: string) {
