@@ -190,19 +190,23 @@ class PostService extends BaseService {
         MATCH (session:${NodeLabels.PostSession} {sessionId: $postId})
         DETACH DELETE session
 
-        // // Optional link to topic
-        FOREACH (_ IN CASE WHEN $topicSlug <> "" THEN [1] ELSE [] END |
-          MERGE (topic:${NodeLabels.Topic} {slug: $topicSlug})
-          ON CREATE SET
-            topic.popularity = 0,
-            topic.createdAt = datetime($timestamp)
+        WITH p, u, COALESCE($topicSlug, "") AS topicSlug
 
-          MERGE (p)-[:${RelationshipTypes.BELONGS_TO}]->(topic)
-          MERGE (u)-[r:${RelationshipTypes.INTERESTED_IN}]->(topic)
-          ON CREATE SET
-            r.interestLevel = 5,
-            r.since = datetime($timestamp)
-        )
+        CALL(p, u, topicSlug){
+          WITH * 
+          WHERE topicSlug IS NOT NULL AND topicSlug <> ""
+
+           MERGE (topic:${NodeLabels.Topic} {slug: $topicSlug})
+            ON CREATE SET
+              topic.popularity = 0,
+              topic.createdAt = datetime($timestamp)
+
+            MERGE (p)-[:${RelationshipTypes.BELONGS_TO}]->(topic)
+            MERGE (u)-[r:${RelationshipTypes.INTERESTED_IN}]->(topic)
+            ON CREATE SET
+              r.interestLevel = 5,
+              r.since = datetime($timestamp)
+        }
 
         WITH p, u, COALESCE($hashtags, []) AS hashtags
 
@@ -224,8 +228,8 @@ class PostService extends BaseService {
         
         WITH p, u, COALESCE($files,[]) AS files
 
-        CALL {
-          WITH p, u, files
+        CALL(p, u, files) {
+          WITH *
 
           // // Create new file nodes
           UNWIND range(0, size(files)-1) AS idx
@@ -241,10 +245,10 @@ class PostService extends BaseService {
   
           WITH p, u, f, COALESCE(file.tags, []) AS tags
             // // create file - user tags
-            CALL {
-                WITH p, u, f, tags
+            CALL(p, u, f, tags) {
+                WITH *
                 UNWIND tags AS tag
-    
+
                 MATCH(taggedUser:${NodeLabels.User} {id: tag.userId})
                 OPTIONAL MATCH(taggedUser)-[blockedByUser:${RelationshipTypes.BLOCKED}]->(u)
                 WHERE blockedByUser IS NULL 
@@ -261,35 +265,38 @@ class PostService extends BaseService {
                   ON CREATE SET mentionRel.timestamp = datetime($timestamp)
 
                 WITH p, u, f, taggedUser, tag
-                WHERE taggedUser.id <> u.id
 
-                WITH p, u, f, taggedUser, tag
-                
-                CREATE (activity:${NodeLabels.Activity} {
-                  id: randomUUID(), 
-                  type: "${ActivityTypes.TAG}",
-                  actorId: $userId,
-                  targetId: p.id,
-                  message: u.username + " tagged you in a post",
-                  createdAt: datetime($timestamp)
-                })
-    
-                CREATE (taggedUser)-[:${RelationshipTypes.HAS_ACTIVITY} {timestamp:$timestamp}]->(activity)
-                WITH p AS post, u AS user, f AS file, activity
-                CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
-                
-                RETURN post, user, file
+                  CALL(p, u, f, taggedUser, tag){
+                    WITH *
+                  
+                    WHERE taggedUser.id <> u.id
+
+                    WITH p, u, f, taggedUser, tag
+                    
+                    CREATE (activity:${NodeLabels.Activity} {
+                      id: randomUUID(), 
+                      type: "${ActivityTypes.TAG}",
+                      actorId: $userId,
+                      targetId: p.id,
+                      message: u.username + " tagged you in a post",
+                      createdAt: datetime($timestamp)
+                    })
+        
+                    CREATE (taggedUser)-[:${RelationshipTypes.HAS_ACTIVITY} {timestamp:$timestamp}]->(activity)
+                    WITH activity
+                    CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
+                  
+                  }
             }
 
-          RETURN post, user, COLLECT(DISTINCT file) AS processedFiles
+          RETURN p AS post, u AS user, COLLECT(DISTINCT f) AS processedFiles
         }
 
         WITH post AS p, user AS u, COALESCE($mentions, []) AS mentions
 
         // // Handle user mentions
-        CALL {
-          WITH p, u, mentions
-
+        CALL(p, u, mentions) {
+          WITH *
           UNWIND mentions AS mention
 
           MATCH(userMentioned:${NodeLabels.User} {username: mention})
@@ -300,25 +307,29 @@ class PostService extends BaseService {
             ON CREATE SET r.timestamp = datetime($timestamp)
         
           WITH p, u, userMentioned, mention
-          WHERE userMentioned.id <> u.id
 
-          CREATE (activity:${NodeLabels.Activity} {
-            id: randomUUID(), 
-            type: "${ActivityTypes.MENTIONED}",
-            actorId: $userId,
-            targetId: p.id,
-            message: u.username + " mentioned you in a post",
-            createdAt: datetime($timestamp)
-          })
+          CALL (p, u, userMentioned, mention) {
+              WITH *
+              WHERE userMentioned.id <> u.id
 
-          CREATE (userMentioned)-[:${RelationshipTypes.HAS_ACTIVITY} {timestamp:$timestamp}]->(activity)
-          WITH p AS post, mention, activity
-          CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
+              CREATE (activity:${NodeLabels.Activity} {
+                id: randomUUID(), 
+                type: "${ActivityTypes.MENTIONED}",
+                actorId: $userId,
+                targetId: p.id,
+                message: u.username + " mentioned you in a post",
+                createdAt: datetime($timestamp)
+              })
 
-           RETURN post, COLLECT(mention) AS _mentions
+              CREATE (userMentioned)-[:${RelationshipTypes.HAS_ACTIVITY} {timestamp:$timestamp}]->(activity)
+              WITH activity
+              CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
+          }
+
+           RETURN COLLECT(DISTINCT mention) AS _mentions
          }
 
-        RETURN post{.*} AS post
+        RETURN p{.*, mentions} AS post
       `,
       params
     );
