@@ -111,7 +111,7 @@ class PostValidator extends ValidatorMiddleware {
   ]);
 
   validatePostId = this.inputs([
-    param("id", "Post ID is required")
+    param("postId", "Post ID is required")
       .notEmpty()
       .isUUID()
       .withMessage("Invalid post ID"),
