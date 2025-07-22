@@ -143,6 +143,7 @@ class PostService extends BaseService {
   async createPost(payload: CreatePostInput): Promise<Post | null> {
     const hashtags = extractHashtags(payload.caption);
     const mentions = extractMentions(payload.caption);
+
     const topicSlug = payload?.topicSlug
       ? slugify(payload.topicSlug, {
           lower: true,
@@ -158,7 +159,7 @@ class PostService extends BaseService {
       userId: payload.userId,
       caption: payload.caption,
       files: payload?.files ?? [],
-      createdAt: now.toISOString(),
+      timestamp: now.toISOString(),
       topicSlug,
       hashtags,
       mentions,
@@ -173,7 +174,7 @@ class PostService extends BaseService {
           id: $postId,
           caption: $caption,
           userId: u.id,
-          createdAt: datetime($createdAt),
+          createdAt: datetime($timestamp),
           likes: 0,
           comments: 0,
           shares: 0,
@@ -185,105 +186,23 @@ class PostService extends BaseService {
 
         WITH p, u
 
-        // // Optional link to topic
-        WHERE $topicSlug IS NOT NULL AND $topicSlug <> ""
-        MERGE (t:${NodeLabels.Topic} {slug: $topicSlug})
-        ON CREATE SET
-          topic.popularity = 0,
-          topic.createdAt = datetime($createdAt)
-
-        MERGE (p)-[:${RelationshipTypes.BELONGS_TO}]->(t)
-        MERGE (u)-[r:${RelationshipTypes.INTERESTED_IN}]->(t)
-        ON CREATE SET
-          r.interestLevel = 5,
-          r.since = datetime($createdAt)
-
-        WITH p, u
-
         // // match and delete session
         MATCH (session:${NodeLabels.PostSession} {sessionId: $postId})
         DETACH DELETE session
-        
-        WITH p, u, $files AS files
 
-        // // Create new file nodes
-        WHERE size(COALESCE(files, [])) > 0
-        UNWIND range(0, size(COALESCE(files, []))-1) AS idx
+        // // Optional link to topic
+        FOREACH (_ IN CASE WHEN $topicSlug <> "" THEN [1] ELSE [] END |
+          MERGE (topic:${NodeLabels.Topic} {slug: $topicSlug})
+          ON CREATE SET
+            topic.popularity = 0,
+            topic.createdAt = datetime($timestamp)
 
-        WITH p, u, idx, files[idx] AS file //, COALESCE(files[idx].tags, []) AS tags
-
-        CREATE (f:${NodeLabels.File})
-          SET f.url = file.url, f.key = file.key, f.fileType = file.fileType
-
-        // // Create post - file relationship
-        MERGE (p)-[r:${RelationshipTypes.HAS_FILE}]->(f)
-          SET r.order = idx
-
-        WITH p, u, f, COALESCE(file.tags, []) AS tags
-
-        CALL {
-            WITH p, u, f, tags
-            // // create file - user tags
-            UNWIND tags AS tag
-
-            MATCH(taggedUser:${NodeLabels.User} {id: tag.userId})
-            OPTIONAL MATCH(u)<-[blockedByUser:${RelationshipTypes.BLOCKED}]-(taggedUser)
-              
-            WHERE blockedByUser IS NULL 
-
-            MERGE (f)-[tagRelationship:${RelationshipTypes.TAGGED}]->(taggedUser)
-            ON CREATE SET
-              tagRelationship.positionX = COALESCE(tag.positionX,null),
-              tagRelationship.positionY = COALESCE(tag.positionY,null)
-
-            // // create post - user mention
-            MERGE (p)-[mentionRel:${RelationshipTypes.MENTIONED}]->(taggedUser)
-              ON CREATE SET mentionRel.timestamp = datetime($createdAt)
-            
-            CREATE (activity:${NodeLabels.Activity} {
-              id: randomUUID(), 
-              type: "${ActivityTypes.TAG}",
-              actorId: u.id,
-              targetId: p.id,
-              createdAt: datetime($timestamp)
-            })
-
-            CREATE (taggedUser)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
-
-            WITH p, u, f, activity,
-            COLLECT(DISTINCT tag) AS tags
-            CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
-        }
-
-      
-        WITH p, u, COLLECT(DISTINCT f) AS files, COALESCE($mentions, []) AS mentions
-        
-        // // Handle user mentions
-        CALL {
-          WITH p, u, mentions
-
-          UNWIND mentions AS mention
-
-          MATCH(userMentioned:${NodeLabels.User} {username: mention})
-          OPTIONAL MATCH(userMentioned)-[blockedByUser:${RelationshipTypes.BLOCKED}]->(u)
-          
-          WHERE blockedByUser IS NULL 
-          MERGE (p)-[r:${RelationshipTypes.MENTIONED}]->(userMentioned)
-              ON CREATE SET r.timestamp = datetime($createdAt)
-
-            CREATE (activity:${NodeLabels.Activity} {
-              id: randomUUID(), 
-              type: "${ActivityTypes.MENTIONED}",
-              actorId: u.id,
-              targetId: p.id,
-              createdAt: datetime($timestamp)
-            })
-
-            CREATE (userMentioned)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
-            
-            WITH activity
-            CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
-         }
+          MERGE (p)-[:${RelationshipTypes.BELONGS_TO}]->(topic)
+          MERGE (u)-[r:${RelationshipTypes.INTERESTED_IN}]->(topic)
+          ON CREATE SET
+            r.interestLevel = 5,
+            r.since = datetime($timestamp)
+        )
 
         WITH p, u, COALESCE($hashtags, []) AS hashtags
 
@@ -292,9 +211,9 @@ class PostService extends BaseService {
           MERGE (h:${NodeLabels.Hashtag} {slug: hashtag})
           ON CREATE SET 
             h.popularity = 0,
-            h.createdAt = datetime($createdAt)
+            h.createdAt = datetime($timestamp)
           SET h.popularity = COALESCE(h.popularity, 0) + 1,
-              h.lastUsedAt = datetime($createdAt)
+              h.lastUsedAt = datetime($timestamp)
 
           MERGE (p)-[:${RelationshipTypes.HAS_HASHTAG}]->(h)
           MERGE (u)-[r:${RelationshipTypes.FOLLOWS_HASHTAG}]->(h)
@@ -302,8 +221,104 @@ class PostService extends BaseService {
             r.interestLevel = 5,
             r.since = datetime()
         )
+        
+        WITH p, u, COALESCE($files,[]) AS files
 
-        RETURN p{.*} AS post
+        CALL {
+          WITH p, u, files
+
+          // // Create new file nodes
+          UNWIND range(0, size(files)-1) AS idx
+  
+          WITH p, u, idx, files[idx] AS file //, COALESCE(files[idx].tags, []) AS tags
+  
+          CREATE (f:${NodeLabels.File})
+            SET f.url = file.url, f.key = file.key, f.fileType = file.fileType
+  
+          // // Create post - file relationship
+          MERGE (p)-[r:${RelationshipTypes.HAS_FILE}]->(f)
+            SET r.order = idx
+  
+          WITH p, u, f, COALESCE(file.tags, []) AS tags
+            // // create file - user tags
+            CALL {
+                WITH p, u, f, tags
+                UNWIND tags AS tag
+    
+                MATCH(taggedUser:${NodeLabels.User} {id: tag.userId})
+                OPTIONAL MATCH(taggedUser)-[blockedByUser:${RelationshipTypes.BLOCKED}]->(u)
+                WHERE blockedByUser IS NULL 
+
+                WITH p, u, f, taggedUser, tag
+    
+                MERGE (f)-[tagRelationship:${RelationshipTypes.TAGGED}]->(taggedUser)
+                ON CREATE SET
+                  tagRelationship.positionX = COALESCE(tag.positionX,null),
+                  tagRelationship.positionY = COALESCE(tag.positionY,null)
+    
+                // // create post - user mention
+                MERGE (p)-[mentionRel:${RelationshipTypes.MENTIONED}]->(taggedUser)
+                  ON CREATE SET mentionRel.timestamp = datetime($timestamp)
+
+                WITH p, u, f, taggedUser, tag
+                WHERE taggedUser.id <> u.id
+
+                WITH p, u, f, taggedUser, tag
+                
+                CREATE (activity:${NodeLabels.Activity} {
+                  id: randomUUID(), 
+                  type: "${ActivityTypes.TAG}",
+                  actorId: $userId,
+                  targetId: p.id,
+                  message: u.username + " tagged you in a post",
+                  createdAt: datetime($timestamp)
+                })
+    
+                CREATE (taggedUser)-[:${RelationshipTypes.HAS_ACTIVITY} {timestamp:$timestamp}]->(activity)
+                WITH p AS post, u AS user, f AS file, activity
+                CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
+                
+                RETURN post, user, file
+            }
+
+          RETURN post, user, COLLECT(DISTINCT file) AS processedFiles
+        }
+
+        WITH post AS p, user AS u, COALESCE($mentions, []) AS mentions
+
+        // // Handle user mentions
+        CALL {
+          WITH p, u, mentions
+
+          UNWIND mentions AS mention
+
+          MATCH(userMentioned:${NodeLabels.User} {username: mention})
+          OPTIONAL MATCH(userMentioned)-[blockedByUser:${RelationshipTypes.BLOCKED}]->(u)
+          WHERE blockedByUser IS NULL AND userMentioned.id <> u.id
+
+          MERGE (p)-[r:${RelationshipTypes.MENTIONED}]->(userMentioned)
+            ON CREATE SET r.timestamp = datetime($timestamp)
+        
+          WITH p, u, userMentioned, mention
+          WHERE userMentioned.id <> u.id
+
+          CREATE (activity:${NodeLabels.Activity} {
+            id: randomUUID(), 
+            type: "${ActivityTypes.MENTIONED}",
+            actorId: $userId,
+            targetId: p.id,
+            message: u.username + " mentioned you in a post",
+            createdAt: datetime($timestamp)
+          })
+
+          CREATE (userMentioned)-[:${RelationshipTypes.HAS_ACTIVITY} {timestamp:$timestamp}]->(activity)
+          WITH p AS post, mention, activity
+          CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
+
+           RETURN post, COLLECT(mention) AS _mentions
+         }
+
+        RETURN post{.*} AS post
       `,
       params
     );
@@ -411,11 +426,14 @@ class PostService extends BaseService {
 
         WITH p, u, creator, topic, COLLECT(hashtag.name) as hashtags, COLLECT(f) AS files
 
+        WHERE creator.id <> u.id
+
         CREATE (activity:${NodeLabels.Activity} {
             id: randomUUID(), 
             type: "${ActivityTypes.LIKE}",
-            actorId: u.id,
+            actorId: $userId,
             targetId: p.id,
+            message: u.username + " liked your post",
             createdAt: datetime($timestamp)
           })
 
@@ -503,11 +521,14 @@ class PostService extends BaseService {
         comment.isDeleted = false
       SET p.comments = coalesce(p.comments, 0) + 1
 
+      WHERE creator.id <> u.id
+
       CREATE (activity:${NodeLabels.Activity} {
             id: randomUUID(), 
             type: "${ActivityTypes.COMMENT}",
-            actorId: u.id,
+            actorId: $userId,
             targetId: c.id,
+            message: u.username + " commented on your post"
             createdAt: datetime($timestamp)
           })
     
@@ -524,16 +545,20 @@ class PostService extends BaseService {
           MATCH(userMentioned:${NodeLabels.User} {username: mention})
           OPTIONAL MATCH(userMentioned)-[blockedByUser:${RelationshipTypes.BLOCKED}]->(u)
 
-          WHERE blockedByUser IS NULL
+          WHERE blockedByUser IS NULL AND userMentioned.id <> u.id
 
           MERGE (c)-[r:${RelationshipTypes.MENTIONED}]->(userMentioned)
               ON CREATE SET r.timestamp = datetime($timestamp)
 
+          WITH p, u, c, userMentioned, mention
+          WHERE userMentioned.id <> u.id
+
           CREATE (activity:${NodeLabels.Activity} {
               id: randomUUID(), 
               type: "${ActivityTypes.MENTIONED}",
-              actorId: u.id,
+              actorId: $userId,
               targetId: p.id,
+              message: u.username + " commented on your post",
               createdAt: datetime($timestamp)
             })
         
@@ -592,15 +617,17 @@ class PostService extends BaseService {
 
         SET p.comments = coalesce(p.comments, 0) + 1
 
+        WHERE author.id <> u.id
         CREATE (activity:${NodeLabels.Activity} {
             id: randomUUID(), 
             type: "${ActivityTypes.REPLY}",
-            actorId: u.id,
+            actorId: $userId,
             targetId: reply.id,
+            message: u.username + " replied your comment",
             createdAt: datetime($timestamp)
         })
   
-        CREATE (u)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
+        CREATE (author)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
         WITH p, u, reply, activity
         CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
 
@@ -613,16 +640,19 @@ class PostService extends BaseService {
             MATCH(userMentioned:${NodeLabels.User} {username: mention})
             OPTIONAL MATCH(userMentioned)-[blockedByUser:${RelationshipTypes.BLOCKED}]->(u)
 
-            WHERE blockedByUser IS NULL
+            WHERE blockedByUser IS NULL AND userMentioned.id <> u.id
   
             MERGE (reply)-[r:${RelationshipTypes.MENTIONED}]->(userMentioned)
             ON CREATE SET r.timestamp = datetime($timestamp)
 
+            WITH p, reply, u, mention, userMentioned
+
             CREATE (activity:${NodeLabels.Activity} {
                 id: randomUUID(), 
                 type: "${ActivityTypes.MENTIONED}",
-                actorId: u.id,
+                actorId: $userId,
                 targetId: reply.id,
+                message: u.username + " mentioned your in a comment",
                 createdAt: datetime($timestamp)
             })
       
@@ -660,11 +690,14 @@ class PostService extends BaseService {
         MERGE (u)-[r:${RelationshipTypes.LIKED}]->(comment)
         ON CREATE SET r.timestamp = datetime($timestamp), comment.likes = coalesce(comment.likes, 0) + 1
 
+        WHERE author.id <> u.id
+
         CREATE (activity:${NodeLabels.Activity} {
             id: randomUUID(), 
             type: "${ActivityTypes.LIKE}",
             actorId: $userId,
             targetId: $commentId,
+            message: u.username + " liked your comment",
             createdAt: datetime($timestamp)
         })
   

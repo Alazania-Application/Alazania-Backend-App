@@ -438,7 +438,8 @@ class UserService extends BaseService {
       MATCH (userToFollow: ${NodeLabels.User} {id: $userToFollowId})
       OPTIONAL MATCH (userToFollow)-[isFollowingBack:${RelationshipTypes.FOLLOWS}]->(currentUser)
 
-      WHERE userToFollow IS NOT NULL
+      WITH currentUser, userToFollow, isFollowingBack
+      WHERE userToFollow IS NOT NULL AND currentUser.id <> userToFollow.id
 
       MERGE (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(userToFollow)
         ON CREATE SET 
@@ -451,6 +452,7 @@ class UserService extends BaseService {
           type: "${ActivityTypes.FOLLOW}",
           actorId: $currentUserId,
           targetId: $userToFollowId,
+          message: currentUser.username + " followed you",
           createdAt: datetime($timestamp)
       })
 

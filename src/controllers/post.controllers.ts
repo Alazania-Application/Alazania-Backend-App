@@ -15,55 +15,6 @@ import { v4 as uuidv4 } from "uuid";
 
 class PostController {
   publishPost = [
-    // ValidatorMiddleware.inputs([
-    //   body("files", "files must be an array")
-    //     .optional()
-    //     .isArray()
-    //     .isLength({ min: 1, max: 10 })
-    //     .withMessage(
-    //       "files must be an array with at least 1 and at most 10 files"
-    //     ),
-    //   body("files.*.url", "url is required and must be a string")
-    //     .if(body("files").notEmpty())
-    //     .notEmpty()
-    //     .isString(),
-    //   body("files.*.key", "key is required and must be a string")
-    //     .if(body("files").notEmpty())
-    //     .notEmpty()
-    //     .isString(),
-    //   body("files.*.fileType", "fileType is required and must be a string")
-    //     .if(body("files").notEmpty())
-    //     .notEmpty()
-    //     .isString(),
-    //   body("files.*.tags", "tags is must be an array")
-    //     .if(body("files").notEmpty())
-    //     .optional()
-    //     .isArray(),
-    //   body("files.*.tags.*.userId", "User id is required for tags")
-    //     .if(body("files.*.tags").notEmpty())
-    //     .notEmpty()
-    //     .isUUID()
-    //     .withMessage("Invalid User id"),
-    //   body("files.*.tags.*.positionX", "positionX should be a number")
-    //     .if(body("files.*.tags").notEmpty())
-    //     .optional()
-    //     .isNumeric(),
-    //   body("files.*.tags.*.positionY", "positionY should be a number")
-    //     .if(body("files.*.tags").notEmpty())
-    //     .optional()
-    //     .isNumeric(),
-    //   body("files").optional().custom(validateTotalPhotoTags), //max of 20 tags
-    //   body("sessionId", "sessionId is required").notEmpty(),
-    //   body("caption", "caption is required")
-    //     .notEmpty()
-    //     .isString()
-    //     .isLength({ max: 2200, min: 1 })
-    //     .withMessage(
-    //       "caption is required and must be a non-empty string between 1 and 2200 characters."
-    //     )
-    //     .custom(validateHashtagsInCaption) //max of 30 hashtags
-    //     .custom(validateMentionsInCaption), // max of 20 mentions
-    // ]),
     async (req: Request, res: Response) => {
       const userId = req.user?.id;
       const { sessionId, caption } = req.body;

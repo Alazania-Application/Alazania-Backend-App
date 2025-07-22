@@ -51,8 +51,7 @@ class PostValidator extends ValidatorMiddleware {
   validatePostCreation = this.inputs([
     body("files", "files must be an array")
       .optional()
-      .isArray()
-      .isLength({ min: 1, max: 10 })
+      .isArray({ min: 1, max: 10 })
       .withMessage(
         "files must be an array with at least 1 and at most 10 files"
       ),

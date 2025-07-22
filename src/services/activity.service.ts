@@ -8,13 +8,13 @@ class ActivityService extends BaseService {
           MATCH (u:${NodeLabels.User} {id: $userId})-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity:${NodeLabels.Activity})
           OPTIONAL MATCH (actor:${NodeLabels.User} {id: activity.actorId})
           OPTIONAL MATCH (post:${NodeLabels.Post} {id: activity.targetId, isDeleted: false})
-        //   OPTIONAL MATCH (file:${NodeLabels.File})<-[r_has_file:${RelationshipTypes.HAS_FILE}]-(post)
+            //OPTIONAL MATCH (file:${NodeLabels.File})<-[r_has_file:${RelationshipTypes.HAS_FILE}]-(post)
 
           // Optional match to check if the user is following the actor
           OPTIONAL MATCH (u)-[r_follows:${RelationshipTypes.FOLLOWS}]->(actor)
           OPTIONAL MATCH (actor)-[r_follows_back:${RelationshipTypes.FOLLOWS}]->(u)
 
-          WITH activity, actor, post, r_follows, u // Project variables forward
+          WITH activity, actor, post, r_follows, r_follows_back, u // Project variables forward
 
           SKIP $skip
           LIMIT $limit
@@ -24,7 +24,7 @@ class ActivityService extends BaseService {
               actor: {
                   userId: actor.id,
                   username: COALESCE(actor.username, actor.email),
-                  avatar: COALESCE(actor.avatar, ")
+                  avatar: COALESCE(actor.avatar, "")
               },
               postThumbnailUrl: CASE
                   WHEN activity.type IN ["LIKE", "COMMENT", "SHARE", "REPLY"] AND post IS NOT NULL THEN post.thumbnailUrl
