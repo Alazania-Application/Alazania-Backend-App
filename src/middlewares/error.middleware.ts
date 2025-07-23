@@ -2,6 +2,7 @@ import { AxiosError, HttpStatusCode } from "axios";
 import { ErrorResponse } from "../utils";
 import { Request, Response, NextFunction, ErrorRequestHandler } from "express";
 import { Neo4jError } from "neo4j-driver";
+import { logger } from "@/services";
 
 interface CustomError extends Error {
   errno?: number;
@@ -17,7 +18,7 @@ interface CustomError extends Error {
 
 export const errorHandler: ErrorRequestHandler = (
   err: CustomError,
-  _: Request,
+  req: Request,
   res: Response,
   next: NextFunction
 ): void => {
@@ -122,8 +123,10 @@ export const errorHandler: ErrorRequestHandler = (
       };
     }
 
+    let neo4jError: Neo4jError | undefined;
+
     if (err instanceof Neo4jError) {
-      const neo4jError = err;
+      neo4jError = err;
 
       let message = "Internal Server Error";
       let statusCode = HttpStatusCode.InternalServerError;
@@ -156,12 +159,12 @@ export const errorHandler: ErrorRequestHandler = (
           message =
             "Duplicate: A unique record already exists or a required property is missing.";
         }
-      } 
+      }
       // else if (neo4jError.classification === "CLIENT_ERROR") {
       //   // General client errors, e.g., malformed queries
       //   statusCode = HttpStatusCode.BadRequest;
       //   message = neo4jError.message; // Use the original Neo4j error message for client errors
-      // } 
+      // }
       else if (neo4jError.classification === "TRANSIENT_ERROR") {
         // Temporary issues, e.g., deadlock
         statusCode = HttpStatusCode.ServiceUnavailable; // 503 Service Unavailable
@@ -176,9 +179,27 @@ export const errorHandler: ErrorRequestHandler = (
       error = new ErrorResponse(message, statusCode);
     }
 
-    console.log({ err });
+    const loggerPayload = {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+      code: error.code,
+      statusCode: error.statusCode,
+      method: req.method,
+      url: req.originalUrl,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+      body: req.body,
+      query: req.query,
+      userId: req.user?.id, // if available
+      neo4jCode: neo4jError?.code,
+    };
 
-    // Logger.err(error.message || "Server Error", true);
+    if (error.statusCode && error.statusCode < 500) {
+      logger.warn("Client error", loggerPayload);
+    } else {
+      logger.error("Server error", loggerPayload);
+    }
 
     res.status(error.statusCode || HttpStatusCode.InternalServerError).json({
       success: false,

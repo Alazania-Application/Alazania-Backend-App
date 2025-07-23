@@ -48,6 +48,19 @@ services:
       - db:/data
       - neo4j_plugins:/plugins
 
+  seq:
+    image: datalust/seq:latest
+    ports:
+      - "5341:80"    # Web UI
+      - "5342:5342"  # Ingestion (if needed)
+    environment:
+      - ACCEPT_EULA=Y
+      - SEQ_PASSWORD=${LOGGER_PW}
+      - SEQ_FIRSTRUN_ADMINPASSWORD=${LOGGER_PW}
+    volumes:
+      - seq-data:/data
+
 volumes:
   db:
   neo4j_plugins:
+  seq-data:

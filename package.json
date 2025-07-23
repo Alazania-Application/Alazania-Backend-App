@@ -3,14 +3,16 @@
   "version": "1.0.0",
   "description": "API server for Alazania App",
   "main": "app.ts",
+  "type": "module",
   "scripts": {
+    "start": "node dist/app.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsc --build tsconfig.prod.json",
+    "build": "tsc --build tsconfig.prod.json && tsc-alias",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\" ",
     "dev": "concurrently \"tsc -w\" \"nodemon\"",
-    "swagger": "ts-node src/swagger.ts",
+    "swagger": "tsx src/swagger.ts",
     "docker": "docker-compose --env-file ./src/config/.env up",
     "docker:build": "docker-compose down \ndocker-compose --env-file ./src/config/.env up --build"
   },
@@ -19,7 +21,7 @@
       "src"
     ],
     "ext": "ts",
-    "exec": "node --require ts-node/register --require tsconfig-paths/register ./src/app.ts"
+    "exec": "tsx src/app.ts"
   },
   "_moduleAliases": {
     "@": "dist"
@@ -34,6 +36,7 @@
     "@aws-sdk/client-s3": "^3.817.0",
     "@aws-sdk/lib-storage": "^3.817.0",
     "@aws-sdk/s3-request-presigner": "^3.817.0",
+    "@datalust/winston-seq": "^3.0.1",
     "axios": "^1.9.0",
     "bcryptjs": "^3.0.2",
     "cookie-parser": "^1.4.7",
@@ -59,7 +62,8 @@
     "swagger-autogen": "^2.23.7",
     "swagger-ui-express": "^5.0.1",
     "tsconfig-paths": "^4.2.0",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "winston": "^3.17.0"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.8",
@@ -77,7 +81,7 @@
     "concurrently": "^9.1.2",
     "morgan": "^1.10.0",
     "nodemon": "^3.1.10",
-    "ts-node": "^10.9.2",
+    "tsx": "^4.20.3",
     "typescript": "^5.8.3"
   }
 }
