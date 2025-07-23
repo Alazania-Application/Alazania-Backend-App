@@ -40,6 +40,9 @@ export const GOOGLE_CLIENT_ID= process.env.GOOGLE_CLIENT_ID
 export const GOOGLE_CLIENT_SECRET= process.env.GOOGLE_CLIENT_SECRET
 export const GOOGLE_WEB_CLIENT_REDIRECT= process.env.GOOGLE_WEB_CLIENT_REDIRECT
 
+// LOGGER
+export const LOGGER_API_KEY= process.env.LOGGER_API_KEY
+
 // CONSTANTS
 export const MAX_FILE_SIZE_MB = 5; //5MB
 export const MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024; //5MB
