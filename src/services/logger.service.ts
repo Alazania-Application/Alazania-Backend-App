@@ -1,9 +1,10 @@
 import winston from "winston";
 import { SeqTransport } from "@datalust/winston-seq";
 import { LOGGER_API_KEY } from "@/config";
+import { hostname } from "os";
 
 export const logger = winston.createLogger({
-  level: process.env.NODE_ENV === 'production' ? 'warn' : 'debug',
+  level: process.env.NODE_ENV === "production" ? "warn" : "debug",
 
   format: winston.format.combine(
     /* This is required to get errors to log with stack traces. See https://github.com/winstonjs/winston/issues/1498 */
@@ -14,7 +15,7 @@ export const logger = winston.createLogger({
   defaultMeta: {
     application: "alazania",
     environment: process.env.NODE_ENV,
-    instanceId: process.env.INSTANCE_ID || require("os").hostname(),
+    instanceId: process.env.INSTANCE_ID || hostname(),
   },
   transports: [
     new winston.transports.Console({
