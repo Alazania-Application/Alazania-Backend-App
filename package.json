@@ -4,7 +4,7 @@
   "description": "API server for Alazania App",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsc --build tsconfig.prod.json",
+    "build": "tsc --build tsconfig.prod.json && tsc-alias -p tsconfig.prod.json",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\" ",
