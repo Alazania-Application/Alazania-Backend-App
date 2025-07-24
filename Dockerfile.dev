@@ -9,7 +9,7 @@ COPY package.json yarn.lock ./
 RUN yarn install --frozen-lockfile
 
 # Install dev tools
-RUN yarn global add tsx nodemon typescript tsconfig-paths concurrently tsc-alias
+RUN yarn global add tsx nodemon typescript tsconfig-paths concurrently
 
 COPY . .
 
