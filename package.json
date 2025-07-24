@@ -5,13 +5,13 @@
   "main": "app.ts",
   "type": "module",
   "scripts": {
-    "start": "node dist/app.js",
+    "start": "tsconfig-paths node dist/app.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc --build tsconfig.prod.json && tsc-alias",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\" ",
-    "dev": "concurrently \"tsc -w\" \"nodemon\"",
+    "dev": "concurrently \"tsc -w\" \"tsconfig-paths tsx src/app.ts\"",
     "swagger": "tsx src/swagger.ts",
     "docker": "docker-compose --env-file ./src/config/.env up",
     "docker:build": "docker-compose down \ndocker-compose --env-file ./src/config/.env up --build"
@@ -21,7 +21,7 @@
       "src"
     ],
     "ext": "ts",
-    "exec": "tsx src/app.ts"
+    "exec": "tsconfig-paths tsx src/app.ts"
   },
   "_moduleAliases": {
     "@": "dist"
@@ -48,7 +48,6 @@
     "google-auth-library": "^9.15.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
-    "module-alias": "^2.2.3",
     "ms": "^2.1.3",
     "multer": "^2.0.0",
     "multer-s3": "^3.0.1",

@@ -1,4 +1,4 @@
-import "module-alias/register";
+import 'tsconfig-paths/register';
 import { createServer } from "http";
 import colors from "colors";
 import express, { Express } from "express";
