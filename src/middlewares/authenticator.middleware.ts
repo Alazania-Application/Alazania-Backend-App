@@ -4,7 +4,7 @@ import { asyncHandler } from "./async.middleware";
 import { ErrorResponse } from "../utils";
 import { IUser } from "@/models";
 import { authService, userService } from "@/services";
-import { ACCESS_TOKEN_SECRET } from "@/config";
+import { ACCESS_TOKEN_SECRET } from "@/config/index.js";
 
 /**
  * Description placeholder
