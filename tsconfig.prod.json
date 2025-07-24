@@ -1,15 +1,27 @@
 {
-  "extends": "./tsconfig.json",
+  "extends": "./tsconfig.json", // If you have a base tsconfig.json
   "compilerOptions": {
-    "sourceMap": false,
-    "declaration": true,            // Optional: emit .d.ts files if you're publishing a lib
-    "noEmitOnError": true           // Optional: prevents emit if there are type errors
+    "module": "NodeNext", // This is crucial for ESM output
+    "target": "ES2022", // Or ESNext, matching your Node.js version
+    "moduleResolution": "NodeNext", // Use NodeNext for proper ESM resolution
+    "outDir": "./dist", // Or your desired output directory
+    "rootDir": "./src", // Your source directory
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    // Ensure this is set to true if you are importing TS files with .js extensions
+    "allowImportingTsExtensions": true,
+    // If you want stricter checks for consistency
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true, // Often useful to prevent type errors in node_modules
+    "declaration": true, // If you want to generate .d.ts files
+    "sourceMap": false // Usually false for production builds
   },
+  "include": [
+    "src/**/*.ts"
+  ],
   "exclude": [
-    "spec",
-    "src/**/*.mock.ts",
+    "node_modules",
     "src/public",
-    "**/*.test.ts",
-    "**/*.spec.ts"
+    "build.ts" // As per your eslintIgnore
   ]
 }

@@ -2,7 +2,7 @@ import { AxiosError, HttpStatusCode } from "axios";
 import { ErrorResponse } from "../utils";
 import { Request, Response, NextFunction, ErrorRequestHandler } from "express";
 import { Neo4jError } from "neo4j-driver";
-import { logger } from "@/services";
+// import { logger } from "@/services";
 
 interface CustomError extends Error {
   errno?: number;
@@ -26,28 +26,28 @@ export const errorHandler: ErrorRequestHandler = (
   console.log({ error });
   let neo4jError: Neo4jError | undefined;
 
-  const loggerPayload = {
-    message: error.message,
-    stack: error.stack,
-    name: error.name,
-    code: error.code,
-    statusCode: error.statusCode,
-    method: req.method,
-    url: req.originalUrl,
-    ip: req.ip,
-    userAgent: req.headers["user-agent"],
-    body: Object.keys(req.body),
-    query: req.query,
-    userId: req.user?.id, // if available
-    neo4jCode: neo4jError?.code,
-  };
+  // const loggerPayload = {
+  //   message: error.message,
+  //   stack: error.stack,
+  //   name: error.name,
+  //   code: error.code,
+  //   statusCode: error.statusCode,
+  //   method: req.method,
+  //   url: req.originalUrl,
+  //   ip: req.ip,
+  //   userAgent: req.headers["user-agent"],
+  //   body: Object.keys(req.body),
+  //   query: req.query,
+  //   userId: req.user?.id, // if available
+  //   neo4jCode: neo4jError?.code,
+  // };
 
   if (err instanceof ErrorResponse) {
-    if (error.statusCode && error.statusCode < 500) {
-      logger.warn("Client error", loggerPayload);
-    } else {
-      logger.error("Server error", loggerPayload);
-    }
+    // if (error.statusCode && error.statusCode < 500) {
+    //   logger.warn("Client error", loggerPayload);
+    // } else {
+    //   logger.error("Server error", loggerPayload);
+    // }
     res.status(HttpStatusCode.BadRequest).json({
       success: false,
       message: err.message,
@@ -199,11 +199,11 @@ export const errorHandler: ErrorRequestHandler = (
 
       error = new ErrorResponse(message, statusCode);
     }
-    if (error.statusCode && error.statusCode < 500) {
-      logger.warn("Client error", loggerPayload);
-    } else {
-      logger.error("Server error", loggerPayload);
-    }
+    // if (error.statusCode && error.statusCode < 500) {
+    //   logger.warn("Client error", loggerPayload);
+    // } else {
+    //   logger.error("Server error", loggerPayload);
+    // }
 
     res.status(error.statusCode || HttpStatusCode.InternalServerError).json({
       success: false,
