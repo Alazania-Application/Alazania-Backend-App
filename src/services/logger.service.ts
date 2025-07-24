@@ -1,6 +1,6 @@
 import winston from "winston";
-import { SeqTransport } from "@datalust/winston-seq";
-import { LOGGER_API_KEY, LOGGER_URL } from "@/config";
+// import { SeqTransport } from "@datalust/winston-seq";
+// import { LOGGER_API_KEY, LOGGER_URL } from "@/config";
 import { hostname } from "os";
 
 export const logger = winston.createLogger({
@@ -19,9 +19,9 @@ export const logger = winston.createLogger({
   },
   
   transports: [
-    // new winston.transports.Console({
-    //   format: winston.format.simple(),
-    // }),
+    new winston.transports.Console({
+      format: winston.format.simple(),
+    }),
 
     // new SeqTransport({
     //   serverUrl: LOGGER_URL,
