@@ -861,13 +861,12 @@ class PostService extends BaseService {
         OPTIONAL MATCH(u)<-[blockedByUser:${RelationshipTypes.BLOCKED}]-(creator)
         WHERE blockedUser IS NULL AND blockedByUser IS NULL
 
-        OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_COMMENT}]->(c:${NodeLabels.Comment} { isDeleted: false, isRoot:true })<-:${RelationshipTypes.REPLIED_TO}-(reply:${NodeLabels.Comment} { isDeleted: false })
-        OPTIONAL MATCH (reply)-[:${RelationshipTypes.COMMENTED_BY}]->(author: ${NodeLabels.User})
+        MATCH (post)-[:${RelationshipTypes.HAS_COMMENT}]->(c:${NodeLabels.Comment} { id: $commentId, isDeleted: false, isRoot:true })<-:${RelationshipTypes.REPLIED_TO}-(comment:${NodeLabels.Comment} { isDeleted: false })-[:${RelationshipTypes.COMMENTED_BY}]->(author: ${NodeLabels.User})
 
         LIMIT $limit
         SKIP $skip
         
-        RETURN reply{.*, 
+        RETURN comment{.*, 
           author:{
             userId: author.id,
             username: author.username,
