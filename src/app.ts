@@ -22,14 +22,10 @@ async function startServer() {
     });
     server.listen(port, () => {
       console.log(
-        colors.yellow.bold(
-          `🚀 API server running in ${env} mode on port ${port}`
-        )
+        colors.yellow.bold(`🚀 API server running in ${env} mode on port ${port}`)
       );
       console.log(
-        colors.green.bold(
-          `📚 API Documentation: http://localhost:${port}/api/v1/docs`
-        )
+        colors.green.bold(`📚 API Documentation: http://localhost:${port}/api/v1/docs`)
       );
     });
   } catch (error) {
