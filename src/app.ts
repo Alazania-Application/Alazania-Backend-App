@@ -2,11 +2,11 @@ import "module-alias/register.js"
 import { createServer } from "http";
 import colors from "colors";
 import express, { Express } from "express";
-import { env, port } from "./config/index.js";
+import { env, port } from "./config";
 import indexMiddlewares from "./middlewares/index.middlewares.js";
-import BaseService from "./services/base.service.js";
-import { hashtagService } from "./services/hashtags.service.js";
-import { seedService } from "./services";
+import BaseService from "./services/base.service";
+import { hashtagService } from "./services";
+import { seedService } from "./services/seed.service";
 
 const app: Express = express();
 indexMiddlewares(app);
