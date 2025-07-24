@@ -2,11 +2,9 @@
   "name": "alazania",
   "version": "1.0.0",
   "description": "API server for Alazania App",
-  "main": "dist/app.js",
-  "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsc --build tsconfig.prod.json && tsc-alias --verbose",
+    "build": "tsc --build tsconfig.prod.json",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\" ",
