@@ -1,4 +1,4 @@
-import "module-alias/register";
+import "module-alias/register.js";
 import { createServer } from "http";
 import colors from "colors";
 import express, { Express } from "express";
