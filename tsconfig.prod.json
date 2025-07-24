@@ -1,27 +1,11 @@
 {
-  "extends": "./tsconfig.json", // If you have a base tsconfig.json
+  "extends": "./tsconfig.json",
   "compilerOptions": {
-    "module": "NodeNext", // This is crucial for ESM output
-    "target": "ES2022", // Or ESNext, matching your Node.js version
-    "moduleResolution": "NodeNext", // Use NodeNext for proper ESM resolution
-    "outDir": "./dist", // Or your desired output directory
-    "rootDir": "./src", // Your source directory
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-    // Ensure this is set to true if you are importing TS files with .js extensions
-    "allowImportingTsExtensions": true,
-    // If you want stricter checks for consistency
-    "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true, // Often useful to prevent type errors in node_modules
-    "declaration": true, // If you want to generate .d.ts files
-    "sourceMap": false // Usually false for production builds
+    "sourceMap": false
   },
-  "include": [
-    "src/**/*.ts"
-  ],
   "exclude": [
-    "node_modules",
-    "src/public",
-    "build.ts" // As per your eslintIgnore
+    "spec",
+    "src/**/*.mock.ts",
+    "src/public/"
   ]
 }
