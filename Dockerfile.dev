@@ -11,6 +11,7 @@ RUN yarn install --frozen-lockfile
 # Install dev tools
 RUN yarn global add tsx nodemon typescript tsconfig-paths concurrently
 
+COPY tsconfig.prod.json ./tsconfig.prod.json
 COPY . .
 
 EXPOSE 8088
