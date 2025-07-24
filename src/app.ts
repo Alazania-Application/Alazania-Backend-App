@@ -1,7 +1,4 @@
-import { replaceTscAliasPaths } from 'tsc-alias';
-replaceTscAliasPaths({
-  resolveFullPaths: true, // Resolve full paths for the replacements
-});
+import "module-alias/register.js"
 import { createServer } from "http";
 import colors from "colors";
 import express, { Express } from "express";

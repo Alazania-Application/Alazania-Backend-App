@@ -23,13 +23,13 @@ export const logger = winston.createLogger({
     //   format: winston.format.simple(),
     // }),
 
-    new SeqTransport({
-      serverUrl: LOGGER_URL,
-      apiKey: LOGGER_API_KEY,
-      onError: (e) => {
-        console.error(e);
-      },
-    }),
+    // new SeqTransport({
+    //   serverUrl: LOGGER_URL,
+    //   apiKey: LOGGER_API_KEY,
+    //   onError: (e) => {
+    //     console.error(e);
+    //   },
+    // }),
   ],
 });
 
