@@ -1,11 +1,15 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "sourceMap": false
+    "sourceMap": false,
+    "declaration": true,            // Optional: emit .d.ts files if you're publishing a lib
+    "noEmitOnError": true           // Optional: prevents emit if there are type errors
   },
   "exclude": [
     "spec",
     "src/**/*.mock.ts",
-    "src/public/"
+    "src/public",
+    "**/*.test.ts",
+    "**/*.spec.ts"
   ]
 }
