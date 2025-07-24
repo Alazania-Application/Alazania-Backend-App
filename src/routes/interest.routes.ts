@@ -75,7 +75,7 @@ interestRouter.get(
 interestRouter.get(
   "/hashtags/my-topics",
   authMiddleWare.protectRoute,
-  interestValidator.validateGetTopic,
+  // interestValidator.validateGetTopic,
   interestController.getUserTopicHashtags
 );
 

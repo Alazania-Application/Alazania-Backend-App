@@ -136,23 +136,10 @@ class HashtagService extends BaseService {
     );
   };
 
-  getHashtagsByTopic = async (
-    params?: Record<string, any>
+  getUserTopicHashtags = async (
+    params: IReadQueryParams & { userId: string } = { userId: "" }
   ): Promise<Partial<Hashtag[]>> => {
-    let cypherQuery: string;
-    let queryParams: Record<string, any> = {};
-
-    if (params?.topicSlugs?.length) {
-      cypherQuery = `
-        UNWIND $topicSlugs AS topicSlug
-        MATCH (t:${NodeLabels.Topic} {slug: topicSlug})-[:${RelationshipTypes.CONTAINS}]->(h:${NodeLabels.Hashtag})
-        RETURN h
-        ORDER BY h.popularity DESC
-        LIMIT $limit
-      `;
-      queryParams.topicSlugs = params.topicSlugs;
-    } else if (params?.userId) {
-      cypherQuery = `
+    const cypherQuery = `
           MATCH (u:${NodeLabels.User} {id: $userId})
           -[:${RelationshipTypes.INTERESTED_IN}]
           ->(t:${NodeLabels.Topic})
@@ -161,18 +148,47 @@ class HashtagService extends BaseService {
           RETURN h
           ORDER BY h.popularity DESC
           LIMIT $limit
+          SKIP $skip
         `;
-      queryParams.userId = params.userId;
+
+    const result = await this.readFromDB(cypherQuery, params);
+
+    return result.records.map((record) => {
+      const hashtagNode = record.get("h")?.properties as Hashtag;
+
+      return {
+        slug: hashtagNode?.slug,
+        name: hashtagNode?.name,
+        popularity: hashtagNode?.popularity,
+      };
+    });
+  };
+
+  getHashtagsByTopic = async (
+    params?: Record<string, any>
+  ): Promise<Partial<Hashtag[]>> => {
+    let cypherQuery: string;
+
+    if (params?.topicSlugs?.length) {
+      cypherQuery = `
+        UNWIND $topicSlugs AS topicSlug
+        MATCH (t:${NodeLabels.Topic} {slug: topicSlug})-[:${RelationshipTypes.CONTAINS}]->(h:${NodeLabels.Hashtag})
+        RETURN h
+        ORDER BY h.popularity DESC
+        LIMIT $limit
+        SKIP $skip
+      `;
     } else {
       cypherQuery = `
         MATCH (h:${NodeLabels.Hashtag})
         RETURN h
         ORDER BY h.popularity DESC
         LIMIT $limit
+        SKIP $skip
       `;
     }
 
-    const result = await this.readFromDB(cypherQuery, { ...params });
+    const result = await this.readFromDB(cypherQuery,params);
 
     return result.records.map((record) => {
       const hashtagNode = record.get("h")?.properties as Hashtag;
@@ -229,7 +245,7 @@ class HashtagService extends BaseService {
 
     return result.records.map((record) => {
       const hashtagNode = record.get("hashtag")?.properties as Hashtag;
-      const following = Boolean(!!record?.get("following")) ;
+      const following = Boolean(!!record?.get("following"));
       return toNativeTypes({
         slug: hashtagNode?.slug,
         name: hashtagNode?.name,
@@ -264,7 +280,7 @@ class HashtagService extends BaseService {
 
     return result.records.map((record) => {
       const hashtagNode = record.get("hashtag")?.properties as Hashtag;
-      const following = Boolean(!!record?.get("following")) ;
+      const following = Boolean(!!record?.get("following"));
       return toNativeTypes({
         slug: hashtagNode?.slug,
         name: hashtagNode?.name,

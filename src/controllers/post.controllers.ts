@@ -360,12 +360,12 @@ class PostController {
     const commentId = req.params?.commentId;
     const comment = req.body?.comment ?? "";
 
-    const reply = await postService.replyToComment(
+    const reply = await postService.replyToComment({
       userId,
       postId,
-      commentId,
-      comment
-    );
+      parentCommentId: commentId,
+      comment,
+    });
 
     res.status(HttpStatusCode.Created).json({
       success: true,

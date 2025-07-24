@@ -612,10 +612,12 @@ class PostService extends BaseService {
   }
 
   async replyToComment(
-    userId: string,
-    postId: string,
-    parentCommentId: string,
-    comment: string
+    {comment, userId, parentCommentId, postId}: {
+      userId: string;
+      postId: string;
+      parentCommentId: string;
+      comment: string;
+    } = { userId: "", postId: "", parentCommentId: "", comment: "" }
   ) {
     const timestamp = new Date().toISOString();
     const hashtags = extractHashtags(comment) ?? [];
@@ -624,7 +626,8 @@ class PostService extends BaseService {
     const result = await this.writeToDB(
       `
         MATCH (u:${NodeLabels.User} {id: $userId})
-        MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(p:${NodeLabels.Post} {id: $postId, isDeleted: false})-[:${RelationshipTypes.HAS_COMMENT}]->(comment:${NodeLabels.Comment} {id: $parentCommentId, isDeleted: false})-[:${RelationshipTypes.COMMENTED_BY}]->(author:${NodeLabels.User})
+        MATCH (p:${NodeLabels.Post} {id: $postId, isDeleted: false})<-[:${RelationshipTypes.POSTED}]-(creator:${NodeLabels.User})
+        MATCH(p)-[:${RelationshipTypes.HAS_COMMENT}]->(comment:${NodeLabels.Comment} {id: $parentCommentId, isDeleted: false})MATCH(comment)-[:${RelationshipTypes.COMMENTED_BY}]->(author:${NodeLabels.User})
 
         OPTIONAL MATCH(u)-[blockedCreator:${RelationshipTypes.BLOCKED}]->(creator)
         OPTIONAL MATCH(u)<-[blockedByCreator:${RelationshipTypes.BLOCKED}]-(creator)
@@ -643,7 +646,7 @@ class PostService extends BaseService {
 
         MERGE (u)-[:${RelationshipTypes.COMMENTED_ON}]->(p)
         MERGE (reply)-[:${RelationshipTypes.COMMENTED_BY}]->(u)
-        MERGE (reply)-[:${RelationshipTypes.REPLIED_TO}]->(parent)
+        MERGE (reply)-[:${RelationshipTypes.REPLIED_TO}]->(comment)
         MERGE (p)-[:${RelationshipTypes.HAS_COMMENT}]->(reply)
 
         SET p.comments = coalesce(p.comments, 0) + 1
@@ -861,13 +864,17 @@ class PostService extends BaseService {
         OPTIONAL MATCH(u)<-[blockedByUser:${RelationshipTypes.BLOCKED}]-(creator)
         WHERE blockedUser IS NULL AND blockedByUser IS NULL
 
-        OPTIONAL MATCH (post)-[:${RelationshipTypes.HAS_COMMENT}]->(c:${NodeLabels.Comment} { isDeleted: false, isRoot:true })<-:${RelationshipTypes.REPLIED_TO}-(reply:${NodeLabels.Comment} { isDeleted: false })
-        OPTIONAL MATCH (reply)-[:${RelationshipTypes.COMMENTED_BY}]->(author: ${NodeLabels.User})
+        MATCH (post)-[:${RelationshipTypes.HAS_COMMENT}]->(c:${NodeLabels.Comment} { id: $commentId, isDeleted: false, isRoot:true })
+        MATCH(c)<-[:${RelationshipTypes.REPLIED_TO}]-(comment:${NodeLabels.Comment} { isDeleted: false })-[:${RelationshipTypes.COMMENTED_BY}]->(author:${NodeLabels.User})
+
+        OPTIONAL MATCH(u)-[blockedUser:${RelationshipTypes.BLOCKED}]->(author)
+        OPTIONAL MATCH(u)<-[blockedByUser:${RelationshipTypes.BLOCKED}]-(author)
+        WHERE blockedUser IS NULL AND blockedByUser IS NULL
 
         LIMIT $limit
         SKIP $skip
         
-        RETURN reply{.*, 
+        RETURN comment{.*, 
           author:{
             userId: author.id,
             username: author.username,

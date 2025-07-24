@@ -173,11 +173,10 @@ class InterestController {
     async (req: Request, res: Response) => {
       const query = {
         ...req.query,
-        topicSlugs: [],
         userId: req.user?.id ?? "",
       };
 
-      const result = await hashtagService.getHashtagsByTopic(query);
+      const result = await hashtagService.getUserTopicHashtags(query);
 
       res.status(HttpStatusCode.Ok).json({
         success: true,
