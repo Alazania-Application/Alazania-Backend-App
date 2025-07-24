@@ -29,10 +29,7 @@ services:
     environment:
       - DB_URI=bolt://neo4j:7687
     depends_on:
-      neo4j:
-        condition: service_started
-      seq:
-        condition: service_healthy
+      - neo4j
     volumes:
       - .:/app
       - /app/node_modules
