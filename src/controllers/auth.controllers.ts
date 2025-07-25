@@ -80,7 +80,7 @@ class AuthController {
       req.id = decode.id;
       let user: IUser | null;
 
-      user = await userService.getUserById(req.id);
+      user = await userService.getUserById(req.user?.id || req.id);
 
       if (!user) {
         throw new ErrorResponse(

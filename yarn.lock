@@ -2828,9 +2828,9 @@ node-fetch@^2.6.9, node-fetch@^2.7.0:
     whatwg-url "^5.0.0"
 
 node-mailjet@^6.0.8:
-  version "6.0.8"
-  resolved "https://registry.yarnpkg.com/node-mailjet/-/node-mailjet-6.0.8.tgz#f74742bc4f35af5e05406f143de890e2eb325663"
-  integrity sha512-VyB2+SeD1zuxpuJLePC4bk10UN0G294CsVlF8YBxb+1tlH0Tw4wECGlTYlQOaRMtPgckdObpcfEbhUWu3UuFIQ==
+  version "6.0.9"
+  resolved "https://registry.yarnpkg.com/node-mailjet/-/node-mailjet-6.0.9.tgz#6ae26b3192f66c49c8536ed98a80b755afe28b26"
+  integrity sha512-WGovS3g+2R/02IkD9/EWNvItRVhei7ltmh40JN53cozna41Ug/T3oKOAehBnV0B6Egx1H6L565HbeffUE7DYWg==
   dependencies:
     axios "^1.8.1"
     json-bigint "^1.0.0"
