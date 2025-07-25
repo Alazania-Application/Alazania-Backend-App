@@ -159,7 +159,10 @@ class InterestController {
 
   getUserFollowedHashtags = [
     async (req: Request, res: Response) => {
-      const result = await hashtagService.getUserFollowedHashtags(req.user?.id);
+      const result = await hashtagService.getUserFollowedHashtags({
+        ...req.query,
+        userId: req.user?.id,
+      });
 
       res.status(HttpStatusCode.Ok).json({
         success: true,

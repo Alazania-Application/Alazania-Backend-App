@@ -140,15 +140,15 @@ class HashtagService extends BaseService {
     params: IReadQueryParams & { userId: string } = { userId: "" }
   ): Promise<Partial<Hashtag[]>> => {
     const cypherQuery = `
-          MATCH (u:${NodeLabels.User} {id: $userId})
-          -[:${RelationshipTypes.INTERESTED_IN}]
-          ->(t:${NodeLabels.Topic})
-          -[:${RelationshipTypes.CONTAINS}]
-          ->(h:${NodeLabels.Hashtag})
-          RETURN h
-          ORDER BY h.popularity DESC
+          MATCH (u:${NodeLabels.User} {id: $userId})-[:${RelationshipTypes.INTERESTED_IN}]->(t:${NodeLabels.Topic})
+          MATCH (t)-[:${RelationshipTypes.CONTAINS}]->(h:${NodeLabels.Hashtag})
+          
           LIMIT $limit
           SKIP $skip
+
+          RETURN h
+          ORDER BY h.popularity DESC
+          
         `;
 
     const result = await this.readFromDB(cypherQuery, params);
@@ -165,7 +165,7 @@ class HashtagService extends BaseService {
   };
 
   getHashtagsByTopic = async (
-    params?: Record<string, any>
+    params?: Record<string, any> & IReadQueryParams
   ): Promise<Partial<Hashtag[]>> => {
     let cypherQuery: string;
 
@@ -173,22 +173,26 @@ class HashtagService extends BaseService {
       cypherQuery = `
         UNWIND $topicSlugs AS topicSlug
         MATCH (t:${NodeLabels.Topic} {slug: topicSlug})-[:${RelationshipTypes.CONTAINS}]->(h:${NodeLabels.Hashtag})
-        RETURN h
-        ORDER BY h.popularity DESC
+        
         LIMIT $limit
         SKIP $skip
+
+        RETURN h
+        ORDER BY h.popularity DESC
       `;
     } else {
       cypherQuery = `
         MATCH (h:${NodeLabels.Hashtag})
-        RETURN h
-        ORDER BY h.popularity DESC
+       
         LIMIT $limit
         SKIP $skip
+        
+        RETURN h
+        ORDER BY h.popularity DESC
       `;
     }
 
-    const result = await this.readFromDB(cypherQuery,params);
+    const result = await this.readFromDB(cypherQuery, params);
 
     return result.records.map((record) => {
       const hashtagNode = record.get("h")?.properties as Hashtag;
@@ -202,15 +206,19 @@ class HashtagService extends BaseService {
   };
 
   getUserFollowedHashtags = async (
-    userId: string
+    params: Record<string, any> & IReadQueryParams = { userId: "" }
   ): Promise<Partial<Hashtag>[]> => {
     const result = await this.readFromDB(
       `
         MATCH (u:${NodeLabels.User} {id: $userId})-[:${RelationshipTypes.FOLLOWS_HASHTAG}]->(h:${NodeLabels.Hashtag})
+        
+        LIMIT $limit
+        SKIP $skip
+        
         RETURN h
         ORDER BY h.popularity DESC
       `,
-      { userId }
+      params
     );
 
     return result.records.map((record) => {
@@ -235,10 +243,12 @@ class HashtagService extends BaseService {
         WHERE search IS NULL OR trim(search) = "" OR h.slug STARTS WITH toLower(trim(search))
 
         OPTIONAL MATCH (u:${NodeLabels.User} {id: $userId})-[following:${RelationshipTypes.FOLLOWS_HASHTAG}]->(h)
-        RETURN h AS hashtag, usageCount, following
-        ORDER BY usageCount DESC
+       
         SKIP $skip
         LIMIT $limit
+
+        RETURN h AS hashtag, usageCount, following
+        ORDER BY usageCount DESC
       `,
       params
     );
@@ -270,10 +280,11 @@ class HashtagService extends BaseService {
 
         OPTIONAL MATCH (u:${NodeLabels.User} {id: $userId})-[following:${RelationshipTypes.FOLLOWS_HASHTAG}]->(h)
 
-        RETURN h AS hashtag, following
-        ORDER BY usageCount DESC
         SKIP $skip
         LIMIT $limit
+
+        RETURN h AS hashtag, following
+        ORDER BY usageCount DESC
       `,
       params
     );
