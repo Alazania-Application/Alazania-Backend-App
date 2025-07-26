@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
-    "target": "es2022",
+    "target": "esnext",
     "module": "commonjs",
-    "moduleResolution": "node",
+    // "moduleResolution": "nodenext",
     "baseUrl": "src",
     "paths": {
       "@/*": ["*"]
@@ -18,6 +18,6 @@
     "strict": true,
     "skipLibCheck": true
   },
-  "include": ["api/*.ts", "src/**/*.ts"],
+  "include": ["api/*.ts", "src/**/*.ts", "src/**/*.mts"],
   "exclude": ["src/public/", "node_modules"]
 }

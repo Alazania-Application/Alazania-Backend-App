@@ -2,7 +2,7 @@ import { AxiosError, HttpStatusCode } from "axios";
 import { ErrorResponse } from "../utils";
 import { Request, Response, NextFunction, ErrorRequestHandler } from "express";
 import { Neo4jError } from "neo4j-driver";
-// import { logger } from "@/services";
+import { logger } from "@/services";
 
 interface CustomError extends Error {
   errno?: number;
@@ -23,10 +23,10 @@ export const errorHandler: ErrorRequestHandler = (
   next: NextFunction
 ): void => {
   let error: CustomError = { ...err };
-  console.log({ error });
+
   let neo4jError: Neo4jError | undefined;
 
-  const loggerPayload = {
+  let loggerPayload = {
     message: error.message,
     stack: error.stack,
     name: error.name,
@@ -43,11 +43,11 @@ export const errorHandler: ErrorRequestHandler = (
   };
 
   if (err instanceof ErrorResponse) {
-    // if (error.statusCode && error.statusCode < 500) {
-    //   logger.warn("Client error", loggerPayload);
-    // } else {
-    //   logger.error("Server error", loggerPayload);
-    // }
+    if (error.statusCode && error.statusCode < 500) {
+      logger.warn(JSON.stringify(loggerPayload, null, 2));
+    } else {
+      logger.error(JSON.stringify(loggerPayload, null, 2));
+    }
     res.status(HttpStatusCode.BadRequest).json({
       success: false,
       message: err.message,
@@ -151,6 +151,9 @@ export const errorHandler: ErrorRequestHandler = (
 
       let message = "Internal Server Error";
       let statusCode = HttpStatusCode.InternalServerError;
+      if (err?.gqlStatusDescription) {
+        (loggerPayload as any).serverError = err?.gqlStatusDescription;
+      }
 
       if (
         neo4jError.code ===
@@ -198,12 +201,16 @@ export const errorHandler: ErrorRequestHandler = (
       }
 
       error = new ErrorResponse(message, statusCode);
+      loggerPayload.message = error.message;
     }
-    // if (error.statusCode && error.statusCode < 500) {
-    //   logger.warn("Client error", loggerPayload);
-    // } else {
-    //   logger.error("Server error", loggerPayload);
-    // }
+
+    console.error({ err });
+
+    if (error.statusCode && error.statusCode < 500) {
+      logger.warn(JSON.stringify(loggerPayload, null, 2));
+    } else {
+      logger.error(JSON.stringify(loggerPayload, null, 2));
+    }
 
     res.status(error.statusCode || HttpStatusCode.InternalServerError).json({
       success: false,

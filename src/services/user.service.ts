@@ -12,7 +12,7 @@ import { ActivityTypes, NodeLabels, RelationshipTypes } from "@/enums";
 class UserService extends BaseService {
   withDTO = (doc: IUser, otherFields: string[] = []) => {
     try {
-      return omitDTO(doc, ["password", "isDeleted", ...(otherFields as any)]);
+      return omitDTO(valueToNativeType(doc), ["password", "isDeleted", ...(otherFields as any)]);
     } catch (error) {
       return null;
     }
@@ -20,7 +20,7 @@ class UserService extends BaseService {
 
   withPickDTO = (doc: IUser, otherFields: string[] = []) => {
     try {
-      return toDTO(doc, [...(otherFields as any)]);
+      return toDTO(valueToNativeType(doc), [...(otherFields as any)]);
     } catch (error) {
       return null;
     }
@@ -28,7 +28,7 @@ class UserService extends BaseService {
 
   withPublicDTO = (doc: IUser, extraFields: string[] = []) => {
     try {
-      return this.withPickDTO(doc, [
+      return this.withPickDTO(valueToNativeType(doc), [
         "firstName",
         "lastName",
         "avatar",
@@ -211,29 +211,30 @@ class UserService extends BaseService {
         MATCH (other:${NodeLabels.User})
         OPTIONAL MATCH (currentUser)<-[blockedByUser:${RelationshipTypes.BLOCKED}]-(other)
 
-        WITH other, currentUser, COALESCE($search, null) AS search
+        WITH other, currentUser, toLower(trim(COALESCE($search, ""))) AS search
 
         WHERE other IS NOT NULL AND blockedByUser IS NULL
-        AND (search IS NULL OR trim(search) = "" OR other.name CONTAINS toLower(trim(search)) OR other.username CONTAINS toLower(trim(search)))
+        AND (search IS NULL OR search = "" OR other.name CONTAINS search OR other.username CONTAINS search)
         AND other.id <> $userId
+
+        LIMIT $limit
+        SKIP $skip
 
         OPTIONAL MATCH (other)-[isFollowingBack:${RelationshipTypes.FOLLOWS}]->(currentUser)
         OPTIONAL MATCH (currentUser)-[isFollowing:${RelationshipTypes.FOLLOWS}]->(other)
- 
-   
-        RETURN other{.*,
-          isFollowingBack: (isFollowingBack IS NOT NUll), 
-          isFollowing: (isFollowing IS NOT NUll),
-        } AS other
 
-        LIMIT $limit
+        RETURN other{
+          .*,
+          isFollowingBack: (isFollowingBack IS NOT NUll), 
+          isFollowing: (isFollowing IS NOT NUll)
+        } AS user
       `;
 
     const result = await this.readFromDB(query, params);
 
-    const users = result.records.map((v) => ({
-      ...this.withPublicDTO(v.get("other").properties),
-    })) as IUser[];
+    const users = result.records.map((v) =>
+      this.withPublicDTO(v.get("user"))
+    ) as IUser[];
 
     return users;
   };
@@ -282,9 +283,9 @@ class UserService extends BaseService {
 
     const result = await this.readFromDB(query, params);
 
-    return result.records.map((v) => ({
-      ...this.withPublicDTO(v.get("other")?.properties),
-    })) as IUser[];
+    return result.records.map((v) =>
+      this.withPublicDTO(v.get("other"))
+    ) as IUser[];
   };
 
   reportUser = async (
@@ -474,7 +475,7 @@ class UserService extends BaseService {
     });
 
     const doc = result.records.map((v) => ({
-      ...this.withPublicDTO(v.get("userToFollow").properties)
+      ...this.withPublicDTO(v.get("userToFollow").properties),
     }))[0] as IUser;
 
     const user = this.withDTO(doc) as IUser;
