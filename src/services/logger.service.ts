@@ -1,4 +1,4 @@
-import { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } from "@/config/index.js";
+import { env, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } from "@/config/index.js";
 import { createLogger, format, transports } from "winston";
 const { combine, timestamp, printf, errors } = format;
 import { BufferedTelegramTransport } from "@/utils/telegram-logger.utils";
@@ -16,13 +16,16 @@ export const logger = createLogger({
   ),
   transports: [
     // new transports.Console(),
-    new BufferedTelegramTransport({
-      token: TELEGRAM_BOT_TOKEN!,
-      chatId: TELEGRAM_CHAT_ID!,
-      level: "error",
-      flushInterval: 10000, // 10s
-      bufferLimit: 5,
-    }),
+    ...(env === "production"
+      ? [
+          new BufferedTelegramTransport({
+            token: TELEGRAM_BOT_TOKEN!,
+            chatId: TELEGRAM_CHAT_ID!,
+            level: "error",
+            flushInterval: 10000, // 10s
+            bufferLimit: 5,
+          }),
+        ]
+      : []),
   ],
 });
-
