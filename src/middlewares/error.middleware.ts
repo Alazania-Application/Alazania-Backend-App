@@ -23,10 +23,10 @@ export const errorHandler: ErrorRequestHandler = (
   next: NextFunction
 ): void => {
   let error: CustomError = { ...err };
-  console.log({ error });
+
   let neo4jError: Neo4jError | undefined;
 
-  const loggerPayload = {
+  let loggerPayload = {
     message: error.message,
     stack: error.stack,
     name: error.name,
@@ -44,9 +44,9 @@ export const errorHandler: ErrorRequestHandler = (
 
   if (err instanceof ErrorResponse) {
     if (error.statusCode && error.statusCode < 500) {
-      logger.warn("Client error", loggerPayload);
+      logger.warn(JSON.stringify(loggerPayload, null, 2));
     } else {
-      logger.error("Server error", loggerPayload);
+      logger.error(JSON.stringify(loggerPayload, null, 2));
     }
     res.status(HttpStatusCode.BadRequest).json({
       success: false,
@@ -151,6 +151,9 @@ export const errorHandler: ErrorRequestHandler = (
 
       let message = "Internal Server Error";
       let statusCode = HttpStatusCode.InternalServerError;
+      if (err?.gqlStatusDescription) {
+        (loggerPayload as any).serverError = err?.gqlStatusDescription;
+      }
 
       if (
         neo4jError.code ===
@@ -198,11 +201,15 @@ export const errorHandler: ErrorRequestHandler = (
       }
 
       error = new ErrorResponse(message, statusCode);
+      loggerPayload.message = error.message;
     }
+
+    console.error({ err });
+
     if (error.statusCode && error.statusCode < 500) {
-      logger.warn("Client error", loggerPayload);
+      logger.warn(JSON.stringify(loggerPayload, null, 2));
     } else {
-      logger.error("Server error", loggerPayload);
+      logger.error(JSON.stringify(loggerPayload, null, 2));
     }
 
     res.status(error.statusCode || HttpStatusCode.InternalServerError).json({

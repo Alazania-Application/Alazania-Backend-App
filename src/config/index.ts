@@ -51,3 +51,8 @@ export const MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024; //5MB
 export const MAX_FILE_COUNT = 5;
 export const MAX_FILE_SIZE_ERROR = `File size should not exceed ${MAX_FILE_SIZE / 1024 / 1024}MB`;
 
+
+// Telegram Logger
+export const TELEGRAM_BOT_TOKEN= process.env.TELEGRAM_BOT_TOKEN as StringValue;
+export const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID as StringValue;
+

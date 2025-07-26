@@ -435,7 +435,7 @@ class PostService extends BaseService {
         OPTIONAL MATCH (post)-[r:${RelationshipTypes.HAS_FILE}]->(f:${NodeLabels.File})
         ORDER BY r.order
 
-        WITH p, u, creator, topic, COLLECT(hashtag.name) as hashtags, COLLECT(f) AS files
+        WITH p, u, creator, topic, COLLECT(hashtag.slug) as hashtags, COLLECT(f) AS files
 
         CALL( p, u, creator ) {
           WITH p, u, creator
@@ -727,7 +727,9 @@ class PostService extends BaseService {
     const result = await this.writeToDB(
       `
         MATCH (u:${NodeLabels.User} {id: $userId})
-        MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(p:${NodeLabels.Post} {isDeleted: false})-[:${RelationshipTypes.HAS_COMMENT}]->(comment:${NodeLabels.Comment} {id: $commentId, isDeleted: false})-[:${RelationshipTypes.COMMENTED_BY}]->(author:${NodeLabels.User})
+        MATCH (creator:${NodeLabels.User})-[:${RelationshipTypes.POSTED}]->(p:${NodeLabels.Post} {isDeleted: false})
+        -[:${RelationshipTypes.HAS_COMMENT}]->(comment:${NodeLabels.Comment} {id: $commentId, isDeleted: false})
+        -[:${RelationshipTypes.COMMENTED_BY}]->(author:${NodeLabels.User})
 
         OPTIONAL MATCH(u)-[blockedCreator:${RelationshipTypes.BLOCKED}]->(creator)
         OPTIONAL MATCH(u)<-[blockedByCreator:${RelationshipTypes.BLOCKED}]-(creator)
@@ -738,21 +740,25 @@ class PostService extends BaseService {
         MERGE (u)-[r:${RelationshipTypes.LIKED}]->(comment)
         ON CREATE SET r.timestamp = datetime($timestamp), comment.likes = coalesce(comment.likes, 0) + 1
 
-        WHERE author.id <> u.id
+        WITH * 
 
-        CREATE (activity:${NodeLabels.Activity} {
-            id: randomUUID(), 
-            type: "${ActivityTypes.LIKE}",
-            actorId: $userId,
-            targetId: $commentId,
-            message: u.username + " liked your comment",
-            createdAt: datetime($timestamp)
-        })
+        CALL (author, u, comment){
+          WITH author, u, comment
+          WHERE author.id <> u.id
   
-        CREATE (author)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
-
-        WITH comment, activity
-        CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
+          CREATE (activity:${NodeLabels.Activity} {
+              id: randomUUID(), 
+              type: "${ActivityTypes.LIKE}",
+              actorId: $userId,
+              targetId: $commentId,
+              message: u.username + " liked your comment",
+              createdAt: datetime($timestamp)
+          })
+        
+          CREATE (author)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
+          WITH comment, activity
+          CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
+        }
 
         RETURN comment
       `,

@@ -617,14 +617,6 @@
     enabled "2.0.x"
     kuler "^2.0.0"
 
-"@datalust/winston-seq@^3.0.1":
-  version "3.0.1"
-  resolved "https://registry.yarnpkg.com/@datalust/winston-seq/-/winston-seq-3.0.1.tgz#c783fef427c07f95e1bb6a074dd1059bbb50cee2"
-  integrity sha512-jWJd5PKcj/nM5f1T65KJgKaxPJRADWe+GEWtj1yEji1H0ub4RWhBEDLYzIFdwUy365lxtc5njsakenp4Evmv+g==
-  dependencies:
-    seq-logging "^3.0.0"
-    winston-transport "^4.9.0"
-
 "@emnapi/runtime@^1.4.4":
   version "1.4.5"
   resolved "https://registry.yarnpkg.com/@emnapi/runtime/-/runtime-1.4.5.tgz#c67710d0661070f38418b6474584f159de38aba9"
@@ -1580,13 +1572,6 @@
   resolved "https://registry.yarnpkg.com/@types/uuid/-/uuid-9.0.8.tgz#7545ba4fc3c003d6c756f651f3bf163d8f0f29ba"
   integrity sha512-jg+97EGIcY9AGHJJRaaPVgetKDsrTgbRjQ5Msgjh/DQKEFl0DtyRr/VCOyD1T2R1MNeWPK/u7JoGhlDZnKBAfA==
 
-abort-controller@^3.0.0:
-  version "3.0.0"
-  resolved "https://registry.yarnpkg.com/abort-controller/-/abort-controller-3.0.0.tgz#eaf54d53b62bae4138e809ca225c8439a6efb392"
-  integrity sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg==
-  dependencies:
-    event-target-shim "^5.0.0"
-
 accepts@~1.3.8:
   version "1.3.8"
   resolved "https://registry.yarnpkg.com/accepts/-/accepts-1.3.8.tgz#0bf0be125b67014adcb0b0921e62db7bffe16b2e"
@@ -2124,11 +2109,6 @@ etag@~1.8.1:
   version "1.8.1"
   resolved "https://registry.yarnpkg.com/etag/-/etag-1.8.1.tgz#41ae2eeb65efa62268aebfea83ac7d79299b0887"
   integrity sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg==
-
-event-target-shim@^5.0.0:
-  version "5.0.1"
-  resolved "https://registry.yarnpkg.com/event-target-shim/-/event-target-shim-5.0.1.tgz#5d4d3ebdf9583d63a5333ce2deb7480ab2b05789"
-  integrity sha512-i/2XbnSz/uxRCU6+NdVJgKWDTM427+MqYbkQzD321DuCQJUqOuJKIA0IM2+W2xtYHdKOmZ4dR6fExsd4SXL+WQ==
 
 events@3.3.0:
   version "3.3.0"
@@ -2820,7 +2800,7 @@ node-cron@^4.0.7:
   resolved "https://registry.yarnpkg.com/node-cron/-/node-cron-4.2.1.tgz#6979be4aee4702f06322d21220df8de252c8e265"
   integrity sha512-lgimEHPE/QDgFlywTd8yTR61ptugX3Qer29efeyWw2rv259HtGBNn1vZVmp8lB9uo9wC0t/AT4iGqXxia+CJFg==
 
-node-fetch@^2.6.9, node-fetch@^2.7.0:
+node-fetch@^2.6.9:
   version "2.7.0"
   resolved "https://registry.yarnpkg.com/node-fetch/-/node-fetch-2.7.0.tgz#d0f0fa6e3e2dc1d27efcd8ad99d550bda94d187d"
   integrity sha512-c4FRfUm/dbcWZ7U+1Wq0AwCyFL+3nt2bEw05wfxSz+DWpWsitgmSgYmy2dQdWyKC1694ELPqMs/YzUSNozLt8A==
@@ -2828,9 +2808,9 @@ node-fetch@^2.6.9, node-fetch@^2.7.0:
     whatwg-url "^5.0.0"
 
 node-mailjet@^6.0.8:
-  version "6.0.8"
-  resolved "https://registry.yarnpkg.com/node-mailjet/-/node-mailjet-6.0.8.tgz#f74742bc4f35af5e05406f143de890e2eb325663"
-  integrity sha512-VyB2+SeD1zuxpuJLePC4bk10UN0G294CsVlF8YBxb+1tlH0Tw4wECGlTYlQOaRMtPgckdObpcfEbhUWu3UuFIQ==
+  version "6.0.9"
+  resolved "https://registry.yarnpkg.com/node-mailjet/-/node-mailjet-6.0.9.tgz#6ae26b3192f66c49c8536ed98a80b755afe28b26"
+  integrity sha512-WGovS3g+2R/02IkD9/EWNvItRVhei7ltmh40JN53cozna41Ug/T3oKOAehBnV0B6Egx1H6L565HbeffUE7DYWg==
   dependencies:
     axios "^1.8.1"
     json-bigint "^1.0.0"
@@ -3080,14 +3060,6 @@ send@0.19.0:
     on-finished "2.4.1"
     range-parser "~1.2.1"
     statuses "2.0.1"
-
-seq-logging@^3.0.0:
-  version "3.0.0"
-  resolved "https://registry.yarnpkg.com/seq-logging/-/seq-logging-3.0.0.tgz#efc9626a6912504d35293cc605b89260a7d67cc9"
-  integrity sha512-ys5QV0745vxBCWuZBPSkgoobuLoUMxTSz1g7ZclHqX1tXXKFLyRIIn8V89EPgDnfRiWfoSo4KSxy/E0MtOYYyw==
-  dependencies:
-    abort-controller "^3.0.0"
-    node-fetch "^2.7.0"
 
 serve-static@1.16.2:
   version "1.16.2"

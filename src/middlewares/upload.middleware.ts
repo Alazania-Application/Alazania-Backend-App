@@ -40,7 +40,7 @@ export const multerMiddleware = multer({
     bucket: SPACES_BUCKET,
     acl: "public-read",
 
-    key: function (req: Request, file, cb) {
+    key: function (req: any, file, cb) {
       cb(
         null,
         `${req?.user?.id || "user"}/${Date.now()}_${path.basename(

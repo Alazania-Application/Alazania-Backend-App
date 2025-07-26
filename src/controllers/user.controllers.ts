@@ -109,7 +109,7 @@ class UserController {
     async (req: Request, res: Response) => {
       const userId = req?.user?.id;
 
-      const users = await userService.getUsers({ userId, ...req.query });
+      const users = await userService.getUsers({  ...req.query , userId });
 
       res.status(HttpStatusCode.Ok).json({
         success: true,

@@ -93,9 +93,9 @@ class AuthenticatorMiddleware {
 
         // @ts-ignore
         req.id = decode.id;
-        let user: IUser|null;
+        let user: IUser | null;
 
-        user = await userService.getUserById(req.id);
+        user = await userService.getUserById(req?.user?.id || req.id);
 
         if (!user) {
           throw this.AuthenticateError();
