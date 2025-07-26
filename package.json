@@ -5,11 +5,12 @@
   "main": "app.ts",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsc --build tsconfig.prod.json",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\" ",
-    "dev": "concurrently \"tsc -w\" \"nodemon\"",
+    "dev": "tsx watch src/app.ts",
+    "build": "tsc && tsc-alias",
+    "start": "node dist/app.js",
     "swagger": "tsx src/swagger.ts",
     "docker": "docker-compose --env-file ./src/config/.env up",
     "docker:build": "docker-compose down \ndocker-compose --env-file ./src/config/.env up --build"
@@ -75,9 +76,7 @@
     "@types/otp-generator": "^4.0.2",
     "@types/swagger-ui-express": "^4.1.8",
     "colors": "^1.4.0",
-    "concurrently": "^9.1.2",
     "morgan": "^1.10.0",
-    "nodemon": "^3.1.10",
     "tsc-alias": "^1.8.16",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3"
