@@ -1,3 +1,4 @@
+import { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } from "@/config";
 import axios from "axios";
 import Transport from "winston-transport";
 
@@ -9,7 +10,7 @@ interface BufferedTelegramTransportOptions {
   bufferLimit?: number; // max messages in buffer before flush
 }
 
-export class BufferedTelegramTransport extends Transport {
+class BufferedTelegramTransport extends Transport {
   private token: string;
   private chatId: string;
   private buffer: string[] = [];
@@ -25,6 +26,7 @@ export class BufferedTelegramTransport extends Transport {
     this.bufferLimit = opts.bufferLimit || 5;
 
     this.intervalId = setInterval(() => this.flush(), this.flushInterval);
+    console.log("Initialized TG transport");
   }
 
   log(info: any, callback: () => void) {
@@ -68,3 +70,11 @@ export class BufferedTelegramTransport extends Transport {
     this.flush(); // Send remaining logs
   }
 }
+
+export const TGTransport = new BufferedTelegramTransport({
+  token: TELEGRAM_BOT_TOKEN!,
+  chatId: TELEGRAM_CHAT_ID!,
+  level: "error",
+  flushInterval: 10000, // 10s
+  bufferLimit: 5,
+});
