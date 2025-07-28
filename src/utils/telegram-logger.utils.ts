@@ -10,7 +10,7 @@ interface BufferedTelegramTransportOptions {
   bufferLimit?: number; // max messages in buffer before flush
 }
 
-class BufferedTelegramTransport extends Transport {
+export class BufferedTelegramTransport extends Transport {
   private token: string;
   private chatId: string;
   private buffer: string[] = [];
