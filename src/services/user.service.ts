@@ -275,7 +275,7 @@ class UserService extends BaseService {
 
         RETURN other{ .*,
           isFollowingBack: (isFollowingBack IS NOT NUll), 
-          isFollowing: (isFollowing IS NOT NUll),
+          isFollowing: (isFollowing IS NOT NUll)
         } AS other
 
         LIMIT $limit
@@ -464,7 +464,7 @@ class UserService extends BaseService {
       RETURN userToFollow{
           .*,
           isFollowing: (isFollowing IS NOT NULl),
-          isFollowingBack: (isFollowingBack IS NOT NULl),
+          isFollowingBack: (isFollowingBack IS NOT NULl)
         } AS userToFollow
     `;
 
@@ -504,7 +504,7 @@ class UserService extends BaseService {
 
       RETURN userToUnfollow{ .*,
         isFollowingBack: (isFollowingBack IS NOT NUll), 
-        isFollowing: (isFollowing IS NOT NUll),
+        isFollowing: (isFollowing IS NOT NUll)
       } AS userToUnfollow
     `;
 
