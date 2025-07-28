@@ -459,7 +459,7 @@ class UserService extends BaseService {
 
       CREATE (userToFollow)-[:${RelationshipTypes.HAS_ACTIVITY}]->(activity)
       WITH userToFollow, isFollowing, isFollowingBack, activity
-        CALL apoc.ttl.expireIn(activity, 10, 'w') // 10 weeks from now
+        CALL apoc.ttl.expireIn(activity, 70, 'd') // Changed 10 'w' to 70 'd'
 
       RETURN userToFollow{
           .*,

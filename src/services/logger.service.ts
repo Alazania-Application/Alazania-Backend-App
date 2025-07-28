@@ -4,6 +4,7 @@ const { combine, timestamp, printf, errors } = format;
 import { BufferedTelegramTransport } from "@/utils/telegram-logger.utils";
 
 const logFormat = printf(({ level, message, timestamp }) => {
+  console.log({message})
   return `[${timestamp}] ${level.toUpperCase()}: ${message}`;
 });
 
