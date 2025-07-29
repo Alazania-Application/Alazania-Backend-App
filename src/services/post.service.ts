@@ -17,7 +17,30 @@ import slugify from "slugify";
 
 class PostService extends BaseService {
   private extractPost = (data: Record<any, any>, userId?: string) => {
-    const record = data && data?.toObject();
+    if (!data) {
+      return null;
+    }
+
+    let record: Record<string, any> | undefined;
+    try {
+      // 2. Safely attempt to call .toObject()
+      // Check if 'data' is an object and if it has a 'toObject' method that is a function.
+      if (
+        typeof data === "object" &&
+        data !== null &&
+        "toObject" in data &&
+        typeof (data as any).toObject === "function"
+      ) {
+        record = (data as any).toObject();
+      } else {
+        // If .toObject() doesn't exist or isn't a function, assume 'data' is already the record or use it directly
+        record = data;
+      }
+    } catch (error) {
+      // Catch any potential errors that might occur during the .toObject() call
+      console.error("Error calling .toObject() on data:", error);
+      return null;
+    }
     const post = toNativeTypes(record?.post);
     const creator = post?.creator;
     const topic = post?.topic ?? "";
@@ -612,7 +635,12 @@ class PostService extends BaseService {
   }
 
   async replyToComment(
-    {comment, userId, parentCommentId, postId}: {
+    {
+      comment,
+      userId,
+      parentCommentId,
+      postId,
+    }: {
       userId: string;
       postId: string;
       parentCommentId: string;
