@@ -121,7 +121,7 @@ class UserController {
 
   getUserProfile = async (req: Request, res: Response) => {
     const currentUser = req?.user?.id;
-    const userId = req?.params?.id;
+    const userId = req?.params?.userId;
 
     const user = await userService.getUserProfile({ currentUser, userId });
 

@@ -149,8 +149,8 @@ class PostController {
   };
 
   getUserPosts = async (req: Request, res: Response) => {
-    const loggedInUser = req?.user?.id;
-    const userId = req?.params?.id;
+    const loggedInUser = req?.user?.id ?? "";
+    const userId = req?.params?.userId ?? "";
 
     const { posts: data, pagination } = await postService.getUserPosts(
       loggedInUser,
@@ -168,7 +168,7 @@ class PostController {
 
   getPostById = async (req: Request, res: Response) => {
     const userId = req?.user?.id ?? "";
-    const postId = req?.params?.id ?? "";
+    const postId = req?.params?.postId ?? "";
 
     const post = await postService.getPostById({
       userId,
@@ -236,8 +236,8 @@ class PostController {
 
   // REPORT
   reportAPost = async (req: Request, res: Response) => {
-    const userId = req?.user?.id;
-    const postId = req.params?.postId;
+    const userId = req?.user?.id ?? "";
+    const postId = req.params?.postId ?? "";
 
     const data = await postService.reportPost(
       userId,
@@ -254,8 +254,8 @@ class PostController {
 
   // LIKES
   likeAPost = async (req: Request, res: Response) => {
-    const userId = req?.user?.id;
-    const postId = req.params?.postId;
+    const userId = req?.user?.id ?? "";
+    const postId = req.params?.postId ?? "";
 
     const data = await postService.likePost(userId, postId);
 
@@ -267,8 +267,8 @@ class PostController {
   };
 
   unlikeAPost = async (req: Request, res: Response) => {
-    const userId = req?.user?.id;
-    const postId = req.params?.postId;
+    const userId = req?.user?.id ?? "";
+    const postId = req.params?.postId ?? "";
 
     const data = await postService.unlikePost(userId, postId);
 
@@ -280,7 +280,7 @@ class PostController {
   };
 
   getPostLikes = async (req: Request, res: Response) => {
-    const postId = req.params?.postId;
+    const postId = req.params?.postId ?? "";
 
     const data = await postService.getPostLikes(postId);
 
@@ -341,8 +341,8 @@ class PostController {
   };
 
   commentOnPost = async (req: Request, res: Response) => {
-    const userId = req?.user?.id;
-    const postId = req.params?.postId;
+    const userId = req?.user?.id ?? "";
+    const postId = req.params?.postId ?? "";
     const { comment: message } = req.body;
 
     const comment = await postService.commentOnPost(userId, postId, message);
@@ -355,9 +355,9 @@ class PostController {
   };
 
   replyToComment = async (req: Request, res: Response) => {
-    const userId = req?.user?.id;
-    const postId = req.params?.postId;
-    const commentId = req.params?.commentId;
+    const userId = req?.user?.id ?? "";
+    const postId = req.params?.postId ?? "";
+    const commentId = req.params?.commentId ?? "";
     const comment = req.body?.comment ?? "";
 
     const reply = await postService.replyToComment({
@@ -375,8 +375,8 @@ class PostController {
   };
 
   likeAComment = async (req: Request, res: Response) => {
-    const userId = req?.user?.id;
-    const commentId = req.params?.commentId;
+    const userId = req?.user?.id ?? "";
+    const commentId = req.params?.commentId ?? "";
 
     const reply = await postService.likeAComment(userId, commentId);
 
@@ -388,8 +388,8 @@ class PostController {
   };
 
   unlikeAComment = async (req: Request, res: Response) => {
-    const userId = req?.user?.id;
-    const commentId = req.params?.commentId;
+    const userId = req?.user?.id ?? "";
+    const commentId = req.params?.commentId ?? "";
 
     const reply = await postService.unlikeAComment(userId, commentId);
 

@@ -26,7 +26,7 @@ postRouter.get(
 );
 
 postRouter.get(
-  "/user/:id",
+  "/user/:userId",
   authMiddleWare.protectRoute,
   postValidator.validateGetUserPosts,
   postController.getUserPosts
@@ -145,7 +145,7 @@ postRouter.post(
 
 
 postRouter.get(
-  "/:id",
+  "/:postId",
   authMiddleWare.protectRoute,
   postValidator.validatePostId,
   postController.getPostById
