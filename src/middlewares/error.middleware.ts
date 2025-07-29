@@ -2,7 +2,36 @@ import { AxiosError, HttpStatusCode } from "axios";
 import { ErrorResponse } from "../utils";
 import { Request, Response, NextFunction, ErrorRequestHandler } from "express";
 import { Neo4jError } from "neo4j-driver";
-import { logger } from "@/services";
+import { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } from "@/config/index.js";
+import { createLogger, format, transports } from "winston";
+const { combine, timestamp, printf, errors } = format;
+import { BufferedTelegramTransport } from "@/utils/telegram-logger.utils";
+
+const logFormat = printf(({ level, message, timestamp }) => {
+  return `[${timestamp}] ${level.toUpperCase()}: ${message}`;
+});
+
+export const logger = createLogger({
+  level: "error",
+  format: combine(
+    errors({ stack: true }),
+    timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
+    logFormat
+  ),
+  transports: [new transports.Console()],
+});
+
+if (process.env.NODE_ENV === "production") {
+  logger.add(
+    new BufferedTelegramTransport({
+      token: TELEGRAM_BOT_TOKEN!,
+      chatId: TELEGRAM_CHAT_ID!,
+      level: "error",
+      flushInterval: 10000, // 10s
+      bufferLimit: 5,
+    })
+  );
+}
 
 interface CustomError extends Error {
   errno?: number;
@@ -22,6 +51,7 @@ export const errorHandler: ErrorRequestHandler = (
   res: Response,
   next: NextFunction
 ): void => {
+
   let error: CustomError = { ...err };
 
   let neo4jError: Neo4jError | undefined;

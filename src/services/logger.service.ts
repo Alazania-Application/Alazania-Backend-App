@@ -4,7 +4,6 @@ const { combine, timestamp, printf, errors } = format;
 import { BufferedTelegramTransport } from "@/utils/telegram-logger.utils";
 
 const logFormat = printf(({ level, message, timestamp }) => {
-  console.log({message})
   return `[${timestamp}] ${level.toUpperCase()}: ${message}`;
 });
 
@@ -15,14 +14,19 @@ export const logger = createLogger({
     timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
     logFormat
   ),
-  transports: [
-    new transports.Console(),
+  transports: [new transports.Console()],
+});
+
+
+if (process.env.NODE_ENV !== "production") {
+  logger.add(
     new BufferedTelegramTransport({
       token: TELEGRAM_BOT_TOKEN!,
       chatId: TELEGRAM_CHAT_ID!,
       level: "error",
       flushInterval: 10000, // 10s
       bufferLimit: 5,
-    }),
-  ],
-});
+    })
+  );
+}
+
