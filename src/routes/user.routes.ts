@@ -101,7 +101,7 @@ userRouter.get(
 );
 
 userRouter.get(
-  "/:id",
+  "/:userId",
   authMiddleWare.protectRoute,
   userValidator.validateUserId,
   userController.getUserProfile

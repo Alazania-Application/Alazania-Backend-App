@@ -29,6 +29,7 @@ class AuthController {
         email: email.toLowerCase(),
         password: hashedPassword,
       };
+      
       const user = await authService.createUser(payload);
 
       res.status(HttpStatusCode.Created).json({

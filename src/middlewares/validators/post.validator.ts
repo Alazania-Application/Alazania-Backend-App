@@ -104,7 +104,7 @@ class PostValidator extends ValidatorMiddleware {
   ]);
 
   validateGetUserPosts = this.inputs([
-    param("id", "user ID is required")
+    param("userId", "user ID is required")
       .notEmpty()
       .isUUID()
       .withMessage("Invalid user ID"),
