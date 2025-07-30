@@ -26,7 +26,6 @@ export class BufferedTelegramTransport extends Transport {
     this.bufferLimit = opts.bufferLimit || 5;
 
     this.intervalId = setInterval(() => this.flush(), this.flushInterval);
-    console.log("Initialized TG transport");
   }
 
   log(info: any, callback: () => void) {

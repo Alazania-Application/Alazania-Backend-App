@@ -1113,6 +1113,26 @@ class PostService extends BaseService {
 
           WITH u, topicResults, hashtagPosts,
               apoc.coll.toSet(topicPosts + hashtagPosts + userPosts) AS allPotentialPosts
+
+          // CALL apoc.when(
+          //   size(allPotentialPosts) = 0,
+          //   '
+          //     MATCH (fallback_p:Post {isDeleted: false})
+          //     SKIP $skip
+          //     LIMIT $limit
+          //     RETURN collect(fallback_p) AS finalPosts
+          //   ',
+          //   '
+          //     RETURN $allPotentialPosts AS finalPosts
+          //   ',
+          //   {
+          //     allPotentialPosts: allPotentialPosts,
+          //     skip: $skip,
+          //     limit: $limit
+          //   }
+          // ) YIELD value
+
+          // WITH *, value.finalPosts AS allPotentialPosts
           
           // Filter out posts from blocked users or users who blocked the current user
           UNWIND allPotentialPosts AS post

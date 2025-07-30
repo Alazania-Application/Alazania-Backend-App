@@ -364,7 +364,7 @@ class AuthService extends BaseService {
             u.password = $password,
             u.id = randomuuid(),
             u.isEmailVerified = false,
-            u.username = $username,
+            // u.username = $username,
             u.createdAt = datetime($timestamp),
             u.following = 0,
             u.followers = 0

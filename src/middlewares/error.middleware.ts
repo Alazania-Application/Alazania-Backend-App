@@ -2,7 +2,7 @@ import { AxiosError, HttpStatusCode } from "axios";
 import { ErrorResponse } from "../utils";
 import { Request, Response, NextFunction, ErrorRequestHandler } from "express";
 import { Neo4jError } from "neo4j-driver";
-import { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } from "@/config/index.js";
+import { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } from "@/config";
 import { createLogger, format, transports } from "winston";
 const { combine, timestamp, printf, errors } = format;
 import { BufferedTelegramTransport } from "@/utils/telegram-logger.utils";
