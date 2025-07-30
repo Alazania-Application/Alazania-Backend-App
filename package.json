@@ -22,9 +22,6 @@
     "ext": "ts",
     "exec": "tsx src/app.ts"
   },
-  "_moduleAliases": {
-    "@": "dist"
-  },
   "eslintIgnore": [
     "src/public/",
     "build.ts"
