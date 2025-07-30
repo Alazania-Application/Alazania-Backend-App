@@ -128,7 +128,7 @@ class UserController {
     res.status(HttpStatusCode.Ok).json({
       success: true,
       data: user,
-      message: "Users fetched successfully",
+      message: "User fetched successfully",
     });
   };
 
